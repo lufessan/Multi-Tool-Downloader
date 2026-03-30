@@ -2,31 +2,39 @@ import { Router, type IRouter } from "express";
 import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
+import https from "https";
 import os from "os";
 import { validatePublicUrlWithDns } from "../../lib/url-validation";
 import { runYtDlp } from "../../lib/ytdlp";
-import { getVideoInfoInvidious } from "../../lib/invidious";
 
 const router: IRouter = Router();
 
-interface YtDlpFormat {
-  format_id: string;
-  ext: string;
-  resolution?: string;
-  height?: number;
-  filesize?: number;
-  filesize_approx?: number;
-  vcodec?: string;
-  acodec?: string;
-  format_note?: string;
+const FIXED_FORMATS = [
+  { format_id: "best",  ext: "mp4", resolution: "أفضل جودة",  filesize: null, vcodec: "avc1", acodec: "aac", note: null },
+  { format_id: "1080p", ext: "mp4", resolution: "1080p", filesize: null, vcodec: "avc1", acodec: "aac", note: "Full HD" },
+  { format_id: "720p",  ext: "mp4", resolution: "720p",  filesize: null, vcodec: "avc1", acodec: "aac", note: "HD" },
+  { format_id: "480p",  ext: "mp4", resolution: "480p",  filesize: null, vcodec: "avc1", acodec: "aac", note: null },
+  { format_id: "360p",  ext: "mp4", resolution: "360p",  filesize: null, vcodec: "avc1", acodec: "aac", note: null },
+  { format_id: "audio", ext: "mp3", resolution: "صوت فقط", filesize: null, vcodec: null, acodec: "mp3", note: null },
+];
+
+function fetchOEmbed(url: string): Promise<{ title: string; author_name: string; thumbnail_url: string }> {
+  return new Promise((resolve, reject) => {
+    const endpoint = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    https.get(endpoint, { timeout: 8000 }, (res) => {
+      let data = "";
+      res.on("data", (d: Buffer) => (data += d));
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); }
+        catch { reject(new Error("oEmbed parse error")); }
+      });
+    }).on("error", reject).on("timeout", () => reject(new Error("oEmbed timeout")));
+  });
 }
 
-interface YtDlpInfo {
-  title: string;
-  thumbnail?: string;
-  duration?: number;
-  uploader?: string;
-  formats?: YtDlpFormat[];
+function extractVideoId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
 }
 
 function runFfmpeg(args: string[]): Promise<void> {
@@ -50,9 +58,16 @@ function isYtDlpBotError(err: unknown): boolean {
     msg.includes("cookies") ||
     msg.includes("Login required") ||
     msg.includes("HTTP Error 429") ||
-    msg.includes("HTTP Error 403")
+    msg.includes("HTTP Error 403") ||
+    msg.includes("unusual") ||
+    msg.includes("This request") ||
+    msg.includes("not a robot") ||
+    msg.includes("Precondition")
   );
 }
+
+const BOT_ERROR_MESSAGE =
+  "YouTube حجب الطلب من الخادم. الحل: أضف ملف Cookies إلى متغير البيئة YOUTUBE_COOKIES في Render.";
 
 // ── GET VIDEO INFO ─────────────────────────────────────────────────────────────
 router.post("/info", async (req, res) => {
@@ -68,13 +83,17 @@ router.post("/info", async (req, res) => {
     return;
   }
 
-  // ── Try yt-dlp first ────────────────────────────────────────────────────────
+  // ── Try yt-dlp first (works when cookies are set or on non-blocked IPs) ─────
   try {
     const output = await runYtDlp([
       "--dump-json", "--no-playlist", "--no-warnings", url,
     ]);
 
-    const info = JSON.parse(output.trim()) as YtDlpInfo;
+    const info = JSON.parse(output.trim()) as {
+      title: string; thumbnail?: string; duration?: number; uploader?: string;
+      formats?: Array<{ format_id: string; ext: string; resolution?: string; height?: number;
+        filesize?: number; filesize_approx?: number; vcodec?: string; acodec?: string; format_note?: string; }>;
+    };
 
     const formats = (info.formats || [])
       .filter((f) => f.vcodec !== "none" || f.acodec !== "none")
@@ -87,10 +106,7 @@ router.post("/info", async (req, res) => {
         acodec: f.acodec && f.acodec !== "none" ? f.acodec : null,
         note: f.format_note ?? null,
       }))
-      .filter(
-        (f, i, arr) =>
-          arr.findIndex((x) => x.resolution === f.resolution && x.ext === f.ext) === i
-      );
+      .filter((f, i, arr) => arr.findIndex((x) => x.resolution === f.resolution && x.ext === f.ext) === i);
 
     formats.sort((a, b) => {
       const aIsVideo = a.vcodec !== null;
@@ -100,66 +116,31 @@ router.post("/info", async (req, res) => {
       return (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0);
     });
 
-    res.json({
-      title: info.title,
-      thumbnail: info.thumbnail || null,
-      duration: info.duration || null,
-      uploader: info.uploader || null,
-      formats,
-    });
+    res.json({ title: info.title, thumbnail: info.thumbnail || null, duration: info.duration || null,
+      uploader: info.uploader || null, formats });
     return;
   } catch (ytErr: unknown) {
-    req.log.warn({ err: ytErr }, "yt-dlp /info failed, trying Invidious");
-    if (!isYtDlpBotError(ytErr)) {
-      res.status(400).json({ error: "تعذر الحصول على معلومات الفيديو. تأكد من صحة الرابط." });
-      return;
-    }
+    req.log.warn({ err: ytErr }, "yt-dlp /info failed, falling back to oEmbed");
   }
 
-  // ── Invidious fallback ──────────────────────────────────────────────────────
+  // ── oEmbed fallback (always works — no bot detection) ───────────────────────
   try {
-    const info = await getVideoInfoInvidious(url);
-
-    const formats = [
-      ...info.videoFormats.map((f, i) => ({
-        format_id: `inv:${f.qualityLabel ?? i}`,
-        ext: f.container ?? "mp4",
-        resolution: f.qualityLabel ?? "فيديو",
-        filesize: null as number | null,
-        vcodec: f.encoding ?? null,
-        acodec: null as string | null,
-        note: null as string | null,
-      })),
-      ...(info.audioUrl ? [{
-        format_id: "inv:audio",
-        ext: "mp3",
-        resolution: "صوت فقط",
-        filesize: null as number | null,
-        vcodec: null as string | null,
-        acodec: "aac",
-        note: null as string | null,
-      }] : []),
-    ].filter(
-      (f, i, arr) => arr.findIndex((x) => x.resolution === f.resolution) === i
-    );
-
-    formats.sort((a, b) => {
-      const aIsVideo = a.vcodec !== null;
-      const bIsVideo = b.vcodec !== null;
-      if (aIsVideo && !bIsVideo) return -1;
-      if (!aIsVideo && bIsVideo) return 1;
-      return (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0);
-    });
+    const oembed = await fetchOEmbed(url);
+    const videoId = extractVideoId(url);
+    const thumbnail = videoId
+      ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`
+      : oembed.thumbnail_url;
 
     res.json({
-      title: info.title,
-      thumbnail: info.thumbnail,
-      duration: info.duration || null,
-      uploader: info.uploader,
-      formats,
+      title: oembed.title,
+      thumbnail,
+      duration: null,
+      uploader: oembed.author_name,
+      formats: FIXED_FORMATS,
+      _source: "oembed",
     });
-  } catch (invErr: unknown) {
-    req.log.error({ err: invErr }, "Invidious fallback also failed for /info");
+  } catch (oembedErr: unknown) {
+    req.log.error({ err: oembedErr }, "oEmbed also failed");
     res.status(400).json({ error: "تعذر الحصول على معلومات الفيديو. تأكد من صحة الرابط." });
   }
 });
@@ -184,113 +165,55 @@ router.post("/download", async (req, res) => {
   }
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ytdl-"));
-  const isInvidiousFormat = typeof format_id === "string" && format_id.startsWith("inv:");
 
-  // ── Try yt-dlp (unless format is Invidious-sourced) ────────────────────────
-  if (!isInvidiousFormat) {
-    try {
-      const outputTemplate = path.join(tmpDir, "%(title)s.%(ext)s");
-      const args: string[] = ["--no-playlist", "--no-warnings", "-o", outputTemplate];
-
-      if (type === "audio") {
-        args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
-      } else if (format_id) {
-        args.push(
-          "-f", `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/${format_id}/best`,
-          "--merge-output-format", "mp4"
-        );
-      } else {
-        args.push(
-          "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best",
-          "--merge-output-format", "mp4"
-        );
-      }
-      args.push(url);
-
-      await runYtDlp(args);
-
-      const files = await fs.readdir(tmpDir);
-      if (files.length === 0) throw new Error("لم يتم تنزيل أي ملف");
-
-      const filePath = path.join(tmpDir, files[0]);
-      const ext = path.extname(files[0]).toLowerCase();
-      const contentType =
-        type === "audio" || ext === ".mp3" ? "audio/mpeg" :
-        ext === ".mp4" ? "video/mp4" : "application/octet-stream";
-
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(files[0])}`);
-      res.sendFile(filePath, (sendErr) => {
-        if (sendErr && !res.headersSent) res.status(500).end();
-        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-      });
-      return;
-    } catch (ytErr: unknown) {
-      req.log.warn({ err: ytErr }, "yt-dlp download failed, trying Invidious");
-      if (!isYtDlpBotError(ytErr)) {
-        if (!res.headersSent) res.status(400).json({ error: "فشل التنزيل. تأكد من صحة الرابط." });
-        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-        return;
-      }
-    }
-  }
-
-  // ── Invidious fallback ──────────────────────────────────────────────────────
   try {
-    const invInfo = await getVideoInfoInvidious(url);
-    const wantedQuality = typeof format_id === "string"
-      ? format_id.replace("inv:", "")
-      : null;
+    const outputTemplate = path.join(tmpDir, "%(title)s.%(ext)s");
+    const args: string[] = ["--no-playlist", "--no-warnings", "-o", outputTemplate];
 
-    if (type === "audio" || wantedQuality === "audio") {
-      if (!invInfo.audioUrl) throw new Error("لا يوجد صوت متاح");
-      const outputPath = path.join(tmpDir, "audio.mp3");
-      await runFfmpeg([
-        "-i", invInfo.audioUrl,
-        "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-y", outputPath,
-      ]);
-      res.setHeader("Content-Type", "audio/mpeg");
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(invInfo.title)}.mp3"`);
-      res.sendFile(outputPath, (sendErr) => {
-        if (sendErr && !res.headersSent) res.status(500).end();
-        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-      });
-      return;
+    const qualityMap: Record<string, string> = {
+      "best":  "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best",
+      "1080p": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best",
+      "720p":  "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best",
+      "480p":  "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best",
+      "360p":  "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=360]+bestaudio/best",
+    };
+
+    if (type === "audio" || format_id === "audio") {
+      args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
+    } else {
+      const fmt = format_id && qualityMap[format_id]
+        ? qualityMap[format_id]
+        : (format_id ? `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/${format_id}/best` : qualityMap["best"]);
+      args.push("-f", fmt, "--merge-output-format", "mp4");
     }
+    args.push(url);
 
-    // Video download
-    let chosenVideo = wantedQuality
-      ? invInfo.videoFormats.find((f) => f.qualityLabel === wantedQuality)
-      : null;
-    if (!chosenVideo) chosenVideo = invInfo.videoFormats[0] ?? null;
-    if (!chosenVideo) throw new Error("لا تتوفر تنسيقات فيديو");
+    await runYtDlp(args);
 
-    const outputPath = path.join(tmpDir, "video.mp4");
-    const ffArgs = invInfo.audioUrl
-      ? [
-          "-i", chosenVideo.url, "-i", invInfo.audioUrl,
-          "-map", "0:v:0", "-map", "1:a:0",
-          "-c:v", "copy", "-c:a", "aac",
-          "-movflags", "+faststart", "-y", outputPath,
-        ]
-      : ["-i", chosenVideo.url, "-c:v", "copy", "-y", outputPath];
+    const files = await fs.readdir(tmpDir);
+    if (files.length === 0) throw new Error("لم يتم تنزيل أي ملف");
 
-    await runFfmpeg(ffArgs);
+    const filePath = path.join(tmpDir, files[0]);
+    const ext = path.extname(files[0]).toLowerCase();
+    const contentType =
+      type === "audio" || format_id === "audio" || ext === ".mp3" ? "audio/mpeg" :
+      ext === ".mp4" ? "video/mp4" : "application/octet-stream";
 
-    const filename = `${invInfo.title}_${chosenVideo.qualityLabel ?? "video"}.mp4`;
-    res.setHeader("Content-Type", "video/mp4");
-    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
-    res.sendFile(outputPath, (sendErr) => {
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(files[0])}`);
+    res.sendFile(filePath, (sendErr) => {
       if (sendErr && !res.headersSent) res.status(500).end();
       fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     });
-  } catch (invErr: unknown) {
-    req.log.error({ err: invErr }, "Invidious fallback also failed for /download");
-    if (!res.headersSent) {
-      res.status(400).json({ error: "فشل التنزيل. تأكد من صحة الرابط والإعدادات." });
-    }
+  } catch (ytErr: unknown) {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    if (!res.headersSent) {
+      const isBotErr = isYtDlpBotError(ytErr);
+      res.status(400).json({
+        error: isBotErr ? BOT_ERROR_MESSAGE : "فشل التنزيل. تأكد من صحة الرابط.",
+        cookies_required: isBotErr,
+      });
+    }
   }
 });
 

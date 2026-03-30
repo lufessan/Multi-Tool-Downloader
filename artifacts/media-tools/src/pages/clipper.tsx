@@ -5,12 +5,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
 import { formatElapsed } from "@/hooks/use-elapsed-timer";
-import { Loader2, Scissors, Search, Clock, HardDrive } from "lucide-react";
+import { Loader2, Scissors, Search, Clock, HardDrive, Cookie } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetYouTubeInfo } from "@workspace/api-client-react";
 import type { VideoFormat } from "@workspace/api-client-react";
 
 type ClipType = "video" | "audio" | "mp3";
+
+function CookiesHelp() {
+  return (
+    <div className="border border-yellow-500/40 bg-yellow-500/10 rounded-xl p-5 space-y-3">
+      <div className="flex items-center gap-2 font-bold text-yellow-400">
+        <Cookie className="w-5 h-5 shrink-0" />
+        <span>YouTube حجب الطلب — الحل: إضافة ملف Cookies</span>
+      </div>
+      <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside marker:font-bold marker:text-yellow-400">
+        <li>ثبّت إضافة <strong className="text-foreground">Get cookies.txt LOCALLY</strong> في متصفح Chrome</li>
+        <li>افتح YouTube وتأكد من تسجيل الدخول</li>
+        <li>اضغط على أيقونة الإضافة واختر <strong className="text-foreground">Export</strong> — سيتم تحميل ملف <code className="bg-muted px-1 rounded text-xs">cookies.txt</code></li>
+        <li>افتح الملف بأي محرر نصوص وانسخ كامل المحتوى</li>
+        <li>افتح إعدادات Render → Environment → أضف متغير <code className="bg-muted px-1 rounded text-xs">YOUTUBE_COOKIES</code> والصق المحتوى</li>
+        <li>احفظ وانتظر إعادة النشر (1-2 دقيقة)</li>
+      </ol>
+      <p className="text-xs text-muted-foreground">ملاحظة: الـ Cookies صالحة لأشهر عدة قبل الحاجة للتحديث.</p>
+    </div>
+  );
+}
 
 function timeToSeconds(t: string): number {
   const parts = t.split(":").map(Number);
@@ -36,6 +56,7 @@ export default function Clipper() {
   const [type, setType] = useState<ClipType>("video");
   const [formatId, setFormatId] = useState<string>("best");
   const [isClipping, setIsClipping] = useState(false);
+  const [cookiesError, setCookiesError] = useState(false);
   const { toast } = useToast();
   const getInfo = useGetYouTubeInfo();
   const clipProgress = useSimulatedProgress(isClipping);
@@ -45,6 +66,7 @@ export default function Clipper() {
     e.preventDefault();
     if (!url) return;
     setFormatId("best");
+    setCookiesError(false);
     getInfo.mutate({ data: { url } }, {
       onError: () => toast({ title: "خطأ", description: "تعذر جلب معلومات الفيديو. تأكد من صحة الرابط.", variant: "destructive" })
     });
@@ -61,6 +83,7 @@ export default function Clipper() {
     e.preventDefault();
     if (!url) return;
     setIsClipping(true);
+    setCookiesError(false);
     try {
       const body = {
         url,
@@ -75,7 +98,8 @@ export default function Clipper() {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
+        const err = await res.json().catch(() => ({})) as { error?: string; cookies_required?: boolean };
+        if (err.cookies_required) { setCookiesError(true); return; }
         throw new Error(err.error || "فشل القص");
       }
       const blob = await res.blob();
@@ -141,6 +165,8 @@ export default function Clipper() {
           )}
         </CardContent>
       </Card>
+
+      {cookiesError && <CookiesHelp />}
 
       {getInfo.data && (
         <Card className="border-primary/20 bg-card/60 overflow-hidden animate-in slide-in-from-bottom-4 duration-400">

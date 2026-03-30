@@ -6,11 +6,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
 import { formatElapsed } from "@/hooks/use-elapsed-timer";
-import { Loader2, Download as DownloadIcon, Search, Video, Music, Clock, HardDrive } from "lucide-react";
+import { Loader2, Download as DownloadIcon, Search, Video, Music, Clock, HardDrive, Cookie } from "lucide-react";
 import type { VideoFormat } from "@workspace/api-client-react";
+
+function CookiesHelp() {
+  return (
+    <div className="border border-yellow-500/40 bg-yellow-500/10 rounded-xl p-5 space-y-3">
+      <div className="flex items-center gap-2 font-bold text-yellow-400">
+        <Cookie className="w-5 h-5 shrink-0" />
+        <span>YouTube حجب الطلب — الحل: إضافة ملف Cookies</span>
+      </div>
+      <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside marker:font-bold marker:text-yellow-400">
+        <li>ثبّت إضافة <strong className="text-foreground">Get cookies.txt LOCALLY</strong> في متصفح Chrome</li>
+        <li>افتح YouTube وتأكد من تسجيل الدخول</li>
+        <li>اضغط على أيقونة الإضافة واختر <strong className="text-foreground">Export</strong> — سيتم تحميل ملف <code className="bg-muted px-1 rounded text-xs">cookies.txt</code></li>
+        <li>افتح الملف بأي محرر نصوص وانسخ كامل المحتوى</li>
+        <li>افتح إعدادات Render → Environment → أضف متغير <code className="bg-muted px-1 rounded text-xs">YOUTUBE_COOKIES</code> والصق المحتوى</li>
+        <li>احفظ وانتظر إعادة النشر (1-2 دقيقة)</li>
+      </ol>
+      <p className="text-xs text-muted-foreground">ملاحظة: الـ Cookies صالحة لأشهر عدة قبل الحاجة للتحديث.</p>
+    </div>
+  );
+}
 
 export default function Download() {
   const [url, setUrl] = useState("");
+  const [cookiesError, setCookiesError] = useState(false);
   const { toast } = useToast();
   const getInfo = useGetVideoInfo();
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
@@ -21,6 +42,7 @@ export default function Download() {
   const handleGetInfo = (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) return;
+    setCookiesError(false);
     getInfo.mutate({ data: { url } }, {
       onError: () => toast({ title: "حدث خطأ", description: "تعذر جلب معلومات الفيديو. تأكد من صحة الرابط.", variant: "destructive" })
     });
@@ -29,6 +51,7 @@ export default function Download() {
   const handleDownload = async (formatId: string | null = null, ext: string = "mp4", type: "video" | "audio" = "video") => {
     const key = formatId || "best";
     setDownloadingFormat(key);
+    setCookiesError(false);
     try {
       const res = await fetch("/api/downloader/download", {
         method: "POST",
@@ -36,7 +59,8 @@ export default function Download() {
         body: JSON.stringify({ url, type, format_id: formatId }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
+        const err = await res.json().catch(() => ({})) as { error?: string; cookies_required?: boolean };
+        if (err.cookies_required) { setCookiesError(true); return; }
         throw new Error(err.error || "فشل التنزيل");
       }
       const blob = await res.blob();
@@ -95,6 +119,8 @@ export default function Download() {
           )}
         </CardContent>
       </Card>
+
+      {cookiesError && <CookiesHelp />}
 
       {getInfo.data && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
