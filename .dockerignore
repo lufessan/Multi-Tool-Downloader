@@ -1,0 +1,22 @@
+# Version control
+.git
+.gitignore
+
+# Node modules (installed fresh inside Docker)
+node_modules
+**/node_modules
+
+# Build outputs (rebuilt inside Docker)
+**/dist
+
+# Dev & editor files
+.local
+.replit
+replit.nix
+*.log
+*.md
+attached_assets
+
+# OS files
+.DS_Store
+Thumbs.db
