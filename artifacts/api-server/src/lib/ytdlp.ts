@@ -5,13 +5,11 @@ import path from "path";
 
 const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
 let cookiesReady = false;
+let cookiesChecked = false;
 
-/**
- * Optional: if YOUTUBE_COOKIES env var is set (raw Netscape cookies.txt content),
- * it will be used for authentication as an extra layer on top of the Invidious fallback.
- */
 function initCookies(): void {
-  if (cookiesReady) return;
+  if (cookiesChecked) return;
+  cookiesChecked = true;
   const raw = process.env["YOUTUBE_COOKIES"];
   if (raw && raw.trim().length > 0) {
     try {
@@ -26,9 +24,22 @@ function initCookies(): void {
 function buildBaseArgs(): string[] {
   initCookies();
   const args: string[] = ["--no-check-certificates"];
+
+  // Proxy support — highest priority bypass method.
+  // Set YTDLP_PROXY to any proxy URL, e.g.:
+  //   http://user:pass@p.webshare.io:80
+  //   socks5://user:pass@proxy.example.com:1080
+  const proxy = process.env["YTDLP_PROXY"];
+  if (proxy && proxy.trim().length > 0) {
+    args.push("--proxy", proxy.trim());
+  }
+
+  // Cookie authentication — fallback / extra layer.
+  // Set YOUTUBE_COOKIES to raw Netscape cookies.txt content.
   if (cookiesReady) {
     args.push("--cookies", COOKIES_FILE);
   }
+
   return args;
 }
 

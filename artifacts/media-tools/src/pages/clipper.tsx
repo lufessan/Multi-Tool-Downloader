@@ -12,22 +12,45 @@ import type { VideoFormat } from "@workspace/api-client-react";
 
 type ClipType = "video" | "audio" | "mp3";
 
-function CookiesHelp() {
+function YouTubeBlockedHelp() {
   return (
-    <div className="border border-yellow-500/40 bg-yellow-500/10 rounded-xl p-5 space-y-3">
-      <div className="flex items-center gap-2 font-bold text-yellow-400">
+    <div className="border border-yellow-500/40 bg-yellow-500/10 rounded-xl p-5 space-y-5">
+      <div className="flex items-center gap-2 font-bold text-yellow-400 text-base">
         <Cookie className="w-5 h-5 shrink-0" />
-        <span>YouTube حجب الطلب — الحل: إضافة ملف Cookies</span>
+        <span>YouTube حجب طلبات الخادم — اختر أحد الحلين</span>
       </div>
-      <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside marker:font-bold marker:text-yellow-400">
-        <li>ثبّت إضافة <strong className="text-foreground">Get cookies.txt LOCALLY</strong> في متصفح Chrome</li>
-        <li>افتح YouTube وتأكد من تسجيل الدخول</li>
-        <li>اضغط على أيقونة الإضافة واختر <strong className="text-foreground">Export</strong> — سيتم تحميل ملف <code className="bg-muted px-1 rounded text-xs">cookies.txt</code></li>
-        <li>افتح الملف بأي محرر نصوص وانسخ كامل المحتوى</li>
-        <li>افتح إعدادات Render → Environment → أضف متغير <code className="bg-muted px-1 rounded text-xs">YOUTUBE_COOKIES</code> والصق المحتوى</li>
-        <li>احفظ وانتظر إعادة النشر (1-2 دقيقة)</li>
-      </ol>
-      <p className="text-xs text-muted-foreground">ملاحظة: الـ Cookies صالحة لأشهر عدة قبل الحاجة للتحديث.</p>
+
+      {/* Option 1: Proxy */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="bg-green-500/20 text-green-400 text-xs font-black px-2 py-0.5 rounded-full">الأفضل • تلقائي 100%</span>
+          <span className="font-bold text-sm">الحل ١: Proxy سكني (webshare.io)</span>
+        </div>
+        <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside marker:font-bold marker:text-green-400">
+          <li>اذهب إلى <strong className="text-foreground">webshare.io</strong> وأنشئ حساباً مجانياً</li>
+          <li>من القائمة افتح <strong className="text-foreground">Proxy → Proxy List → Download</strong></li>
+          <li>في خانة Format اختر: <code className="bg-muted px-1 rounded text-xs">username:password@hostname:port</code></li>
+          <li>انسخ أول proxy من القائمة وأضف <code className="bg-muted px-1 rounded text-xs">http://</code> في البداية</li>
+          <li>في Render → Environment → أضف: <code className="bg-muted px-1 rounded text-xs">YTDLP_PROXY</code> = <code className="bg-muted px-1 rounded text-xs">http://user:pass@host:port</code></li>
+        </ol>
+        <p className="text-xs text-green-400/80">✓ لا يحتاج تجديد — يعمل تلقائياً إلى الأبد</p>
+      </div>
+
+      <hr className="border-white/10" />
+
+      {/* Option 2: Cookies */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <span className="bg-yellow-500/20 text-yellow-400 text-xs font-black px-2 py-0.5 rounded-full">يدوي • مرة كل أشهر</span>
+          <span className="font-bold text-sm">الحل ٢: Cookies من المتصفح</span>
+        </div>
+        <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside marker:font-bold marker:text-yellow-400">
+          <li>ثبّت <strong className="text-foreground">Get cookies.txt LOCALLY</strong> على Chrome</li>
+          <li>افتح YouTube وأنت مسجل الدخول ← اضغط الإضافة ← <strong className="text-foreground">Export</strong></li>
+          <li>افتح الملف المُنزَّل بـ Notepad وانسخ كل المحتوى</li>
+          <li>في Render → Environment → أضف: <code className="bg-muted px-1 rounded text-xs">YOUTUBE_COOKIES</code> والصق المحتوى</li>
+        </ol>
+      </div>
     </div>
   );
 }
@@ -166,7 +189,7 @@ export default function Clipper() {
         </CardContent>
       </Card>
 
-      {cookiesError && <CookiesHelp />}
+      {cookiesError && <YouTubeBlockedHelp />}
 
       {getInfo.data && (
         <Card className="border-primary/20 bg-card/60 overflow-hidden animate-in slide-in-from-bottom-4 duration-400">
