@@ -164,7 +164,7 @@ export default function Home() {
           className="text-4xl md:text-6xl font-black text-white"
           style={{ textShadow: "0 0 40px rgba(255,255,255,0.3), 0 4px 20px rgba(0,0,0,0.8)" }}
         >
-          أدوات الوسائط
+          أركان / ARKAN
         </h1>
         <p
           className="text-white/70 text-sm md:text-base font-medium"
