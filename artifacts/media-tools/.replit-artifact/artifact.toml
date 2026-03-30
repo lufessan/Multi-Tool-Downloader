@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "أدوات الوسائط"
+version = "1.0.0"
+id = "artifacts/media-tools"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21510
+
+[services.development]
+run = "pnpm --filter @workspace/media-tools run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/media-tools", "run", "build" ]
+publicDir = "artifacts/media-tools/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21510"
+BASE_PATH = "/"

@@ -3,13 +3,25 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for Media Tools
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: downloader
+    description: Download videos and audio from any site
+  - name: clipper
+    description: Cut clips from YouTube videos
+  - name: transcriber
+    description: Convert audio/video to text
+  - name: converter
+    description: Convert video to MP3
+  - name: anime
+    description: Anime recognition tool
+  - name: podcast
+    description: Podcast recognition tool
 paths:
   /healthz:
     get:
@@ -24,6 +36,210 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /downloader/info:
+    post:
+      operationId: getVideoInfo
+      tags: [downloader]
+      summary: Get video info and available formats
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoUrlRequest"
+      responses:
+        "200":
+          description: Video info with available formats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoInfoResponse"
+        "400":
+          description: Invalid URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /downloader/download:
+    post:
+      operationId: downloadMedia
+      tags: [downloader]
+      summary: Download video or audio from URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DownloadRequest"
+      responses:
+        "200":
+          description: Download file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /clipper/info:
+    post:
+      operationId: getYouTubeInfo
+      tags: [clipper]
+      summary: Get YouTube video info for clipping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoUrlRequest"
+      responses:
+        "200":
+          description: YouTube video info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoInfoResponse"
+        "400":
+          description: Invalid URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /clipper/clip:
+    post:
+      operationId: clipVideo
+      tags: [clipper]
+      summary: Download a clip from a YouTube video
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClipRequest"
+      responses:
+        "200":
+          description: Clipped video file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transcriber/transcribe:
+    post:
+      operationId: transcribeMedia
+      tags: [transcriber]
+      summary: Transcribe audio or video file to text
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TranscribeRequest"
+      responses:
+        "200":
+          description: Transcription result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionResponse"
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /converter/to-mp3:
+    post:
+      operationId: convertToMp3
+      tags: [converter]
+      summary: Convert video file to MP3
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ConvertRequest"
+      responses:
+        "200":
+          description: MP3 audio file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /anime/recognize:
+    post:
+      operationId: recognizeAnime
+      tags: [anime]
+      summary: Recognize anime from image or description
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AnimeRecognizeRequest"
+      responses:
+        "200":
+          description: Anime recognition result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnimeRecognitionResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /podcast/recognize:
+    post:
+      operationId: recognizePodcast
+      tags: [podcast]
+      summary: Recognize podcast from image or audio
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/PodcastRecognizeRequest"
+      responses:
+        "200":
+          description: Podcast recognition result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PodcastRecognitionResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +250,295 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    VideoUrlRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: URL of the video
+      required:
+        - url
+
+    VideoFormat:
+      type: object
+      properties:
+        format_id:
+          type: string
+        ext:
+          type: string
+        resolution:
+          type: string
+        filesize:
+          type: number
+          nullable: true
+        vcodec:
+          type: string
+          nullable: true
+        acodec:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+      required:
+        - format_id
+        - ext
+        - resolution
+
+    VideoInfoResponse:
+      type: object
+      properties:
+        title:
+          type: string
+        thumbnail:
+          type: string
+          nullable: true
+        duration:
+          type: number
+          nullable: true
+        uploader:
+          type: string
+          nullable: true
+        formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/VideoFormat"
+      required:
+        - title
+        - formats
+
+    DownloadRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: URL to download from
+        format_id:
+          type: string
+          nullable: true
+          description: Specific format ID (null = best quality)
+        type:
+          type: string
+          enum: [video, audio]
+          default: video
+      required:
+        - url
+        - type
+
+    ClipRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          description: YouTube video URL
+        start_time:
+          type: string
+          description: Start time in HH:MM:SS or MM:SS format
+        end_time:
+          type: string
+          description: End time in HH:MM:SS or MM:SS format
+        format_id:
+          type: string
+          nullable: true
+          description: Video format ID
+        type:
+          type: string
+          enum: [video, audio, mp3]
+          default: video
+      required:
+        - url
+        - start_time
+        - end_time
+        - type
+
+    TranscribeRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Audio or video file to transcribe
+        language:
+          type: string
+          nullable: true
+          description: Language hint (ar, en, etc.)
+      required:
+        - file
+
+    TranscriptionResponse:
+      type: object
+      properties:
+        text:
+          type: string
+        language:
+          type: string
+          nullable: true
+        duration:
+          type: number
+          nullable: true
+      required:
+        - text
+
+    ConvertRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Video file to convert
+      required:
+        - file
+
+    AnimeRecognizeRequest:
+      type: object
+      properties:
+        image:
+          type: string
+          format: binary
+          nullable: true
+          description: Image of anime scene/character
+        description:
+          type: string
+          nullable: true
+          description: Text description of the anime
+
+    AnimeResult:
+      type: object
+      properties:
+        title:
+          type: string
+        title_ar:
+          type: string
+          nullable: true
+        title_en:
+          type: string
+          nullable: true
+        episode:
+          type: number
+          nullable: true
+        similarity:
+          type: number
+          nullable: true
+        from:
+          type: number
+          nullable: true
+        to:
+          type: number
+          nullable: true
+        thumbnail:
+          type: string
+          nullable: true
+        anilist_id:
+          type: number
+          nullable: true
+        mal_id:
+          type: number
+          nullable: true
+        genres:
+          type: array
+          items:
+            type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        source_links:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceLink"
+      required:
+        - title
+
+    SourceLink:
+      type: object
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        icon:
+          type: string
+          nullable: true
+      required:
+        - name
+        - url
+
+    AnimeRecognitionResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnimeResult"
+        method:
+          type: string
+          enum: [image, text]
+      required:
+        - results
+        - method
+
+    PodcastRecognizeRequest:
+      type: object
+      properties:
+        image:
+          type: string
+          format: binary
+          nullable: true
+          description: Cover image of the podcast
+        audio:
+          type: string
+          format: binary
+          nullable: true
+          description: Audio clip from the podcast
+
+    PodcastResult:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        image:
+          type: string
+          nullable: true
+        author:
+          type: string
+          nullable: true
+        categories:
+          type: array
+          items:
+            type: string
+          nullable: true
+        source_links:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceLink"
+      required:
+        - title
+
+    PodcastRecognitionResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PodcastResult"
+        method:
+          type: string
+          enum: [image, audio]
+        transcription:
+          type: string
+          nullable: true
+          description: Transcription of audio (if audio recognition was used)
+      required:
+        - results
+        - method

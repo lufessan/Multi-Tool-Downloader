@@ -1,96 +1,61 @@
-# Workspace
+# أدوات الوسائط — Media Tools
 
-## Overview
+A comprehensive Arabic-only (RTL) media tools web application with 7 powerful tools.
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+## Architecture
 
-## Stack
+**Monorepo (pnpm workspace)** with:
+- `artifacts/media-tools` — React + Vite frontend (Arabic RTL, dark mode, Cairo font)
+- `artifacts/api-server` — Express backend (serves at `/api` path prefix)
+- `lib/api-spec` — OpenAPI spec (source of truth for all API contracts)
+- `lib/api-client-react` — React Query hooks generated from OpenAPI spec
+- `lib/integrations-openai-ai-server` — Replit-managed OpenAI client (no user API key needed)
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+## Routing
 
-## Structure
+- Frontend: `/` — served by media-tools Vite dev server
+- API: `/api` — served by api-server Express app
 
-```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
-```
+## The 7 Tools
 
-## TypeScript & Composite Projects
+1. **تنزيل الوسائط** (`/download`) — Download video/audio from any URL using yt-dlp; shows available formats/qualities
+2. **قص المقاطع** (`/clipper`) — Cut YouTube clips by time range (HH:MM:SS) with quality/type selection (video/audio/mp3)
+3. **تفريغ النص** (`/transcribe`) — Transcribe audio or video files to text using OpenAI gpt-4o-mini-transcribe
+4. **تحويل لـ MP3** (`/to-mp3`) — Convert any video file to MP3 using ffmpeg
+5. **التعرف على الأنمي** (`/anime`) — Recognize anime from screenshot (trace.moe + AniList) or text description (AniList search) with links to free streaming sites
+6. **التعرف على البودكاست** (`/podcast`) — Identify podcasts from cover image (OpenAI vision) or audio clip (Whisper transcription) with iTunes search
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+## Backend Routes
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+- `POST /api/downloader/info` — Get video info and formats (yt-dlp)
+- `POST /api/downloader/download` — Download media file (yt-dlp, binary response)
+- `POST /api/clipper/clip` — Cut and download a clip (yt-dlp + ffmpeg, binary response)
+- `POST /api/transcriber/transcribe` — Transcribe audio/video (ffmpeg + OpenAI Whisper)
+- `POST /api/converter/to-mp3` — Convert video to MP3 (ffmpeg, binary response)
+- `POST /api/anime/recognize` — Recognize anime from image or description
+- `POST /api/podcast/recognize` — Recognize podcast from image or audio
 
-## Root Scripts
+## Key Technologies
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- **yt-dlp** — Video/audio downloading and info fetching
+- **ffmpeg** — Audio extraction, video clipping, format conversion
+- **OpenAI gpt-4o-mini-transcribe** — Audio-to-text transcription (via Replit AI integration)
+- **OpenAI gpt-5.2** — Vision AI for anime/podcast image recognition
+- **trace.moe** — Anime scene recognition from screenshots
+- **AniList GraphQL API** — Anime metadata (genres, description, MAL ID)
+- **iTunes Search API** — Podcast search
 
-## Packages
+## Frontend Design
 
-### `artifacts/api-server` (`@workspace/api-server`)
+- **Language**: Arabic only (RTL)
+- **Font**: Cairo (Google Fonts)
+- **Theme**: Dark mode only (deep blue/navy background, cyan primary accent)
+- **Router**: Wouter
+- **State**: React Query for API calls, raw fetch for binary downloads
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+## User Preferences
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+- All UI is Arabic only — no English UI elements
+- RTL layout throughout
+- Binary downloads (video, audio, clip, mp3) use raw fetch + Blob + URL.createObjectURL
+- File uploads use raw fetch + FormData
