@@ -51,18 +51,22 @@ router.post("/to-mp3", upload.single("file"), async (req, res) => {
     await fs.writeFile(inputPath, req.file.buffer);
     await convertToMp3(inputPath, outputPath);
 
-    const mp3Buffer = await fs.readFile(outputPath);
     const filename = `${baseName}.mp3`;
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
-    res.send(mp3Buffer);
+    res.sendFile(outputPath, (sendErr) => {
+      if (sendErr && !res.headersSent) {
+        req.log.error({ err: sendErr }, "Error streaming MP3");
+        res.status(500).end();
+      }
+      fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
   } catch (err: unknown) {
     req.log.error({ err }, "Error converting to MP3");
     if (!res.headersSent) {
       res.status(400).json({ error: "فشل تحويل الملف إلى MP3. تأكد من صحة الملف." });
     }
-  } finally {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 });

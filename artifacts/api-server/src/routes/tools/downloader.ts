@@ -173,14 +173,18 @@ router.post("/download", async (req, res) => {
       `attachment; filename*=UTF-8''${encodeURIComponent(files[0])}`
     );
 
-    const fileBuffer = await fs.readFile(filePath);
-    res.send(fileBuffer);
+    res.sendFile(filePath, (sendErr) => {
+      if (sendErr && !res.headersSent) {
+        req.log.error({ err: sendErr }, "Error streaming download");
+        res.status(500).end();
+      }
+      fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
   } catch (err: unknown) {
     req.log.error({ err }, "Error downloading media");
     if (!res.headersSent) {
       res.status(400).json({ error: "فشل التنزيل. تأكد من صحة الرابط والإعدادات." });
     }
-  } finally {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 });

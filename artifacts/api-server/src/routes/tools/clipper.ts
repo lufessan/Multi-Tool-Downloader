@@ -217,15 +217,18 @@ router.post("/clip", async (req, res) => {
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-    const fileBuffer = await fs.readFile(outputPath);
-    res.send(fileBuffer);
+    res.sendFile(outputPath, (sendErr) => {
+      if (sendErr && !res.headersSent) {
+        req.log.error({ err: sendErr }, "Error streaming clip");
+        res.status(500).end();
+      }
+      fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
   } catch (err: unknown) {
     req.log.error({ err }, "Error clipping video");
     if (!res.headersSent) {
       res.status(400).json({ error: "فشل قص الفيديو. تأكد من صحة البيانات." });
     }
-  } finally {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 });
