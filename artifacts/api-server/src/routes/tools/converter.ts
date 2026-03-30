@@ -57,7 +57,7 @@ router.post("/to-mp3", upload.single("file"), async (req, res) => {
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
     res.send(mp3Buffer);
-  } catch (err: any) {
+  } catch (err: unknown) {
     req.log.error({ err }, "Error converting to MP3");
     if (!res.headersSent) {
       res.status(400).json({ error: "فشل تحويل الملف إلى MP3. تأكد من صحة الملف." });

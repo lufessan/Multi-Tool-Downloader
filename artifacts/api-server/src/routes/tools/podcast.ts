@@ -1,13 +1,14 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import path from "path";
+import crypto from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 interface SourceLink {
@@ -23,6 +24,22 @@ interface PodcastResult {
   author: string | null;
   categories: string[] | null;
   source_links: SourceLink[];
+}
+
+interface PodcastIndexFeed {
+  title?: string;
+  description?: string;
+  image?: string;
+  artwork?: string;
+  author?: string;
+  ownerName?: string;
+  categories?: Record<string, string>;
+  url?: string;
+  link?: string;
+}
+
+interface PodcastIndexResponse {
+  feeds?: PodcastIndexFeed[];
 }
 
 interface ItunesPodcast {
@@ -49,33 +66,75 @@ function buildPodcastSourceLinks(title: string, feedUrl?: string): SourceLink[] 
   const links: SourceLink[] = [
     { name: "Apple Podcasts", url: `https://podcasts.apple.com/search?term=${encoded}`, icon: null },
     { name: "Spotify", url: `https://open.spotify.com/search/${encoded}/podcasts`, icon: null },
-    { name: "Google Podcasts", url: `https://podcasts.google.com/search/${encoded}`, icon: null },
     { name: "Podchaser", url: `https://www.podchaser.com/search/podcasts/${encoded}`, icon: null },
   ];
   if (feedUrl) {
-    links.push({ name: "RSS Feed", url: feedUrl, icon: null });
+    links.unshift({ name: "RSS Feed", url: feedUrl, icon: null });
   }
   return links;
 }
 
+async function searchPodcastIndex(query: string): Promise<PodcastResult[]> {
+  const apiKey = process.env["PODCAST_INDEX_API_KEY"];
+  const apiSecret = process.env["PODCAST_INDEX_API_SECRET"];
+  if (!apiKey || !apiSecret) return [];
+
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const authHash = crypto
+    .createHash("sha1")
+    .update(apiKey + apiSecret + timestamp)
+    .digest("hex");
+
+  const encoded = encodeURIComponent(query);
+  const res = await fetch(
+    `https://api.podcastindex.org/api/1.0/search/byterm?q=${encoded}&max=5`,
+    {
+      headers: {
+        "X-Auth-Key": apiKey,
+        "X-Auth-Date": timestamp,
+        "Authorization": authHash,
+        "User-Agent": "MediaToolsApp/1.0",
+      },
+    }
+  );
+
+  if (!res.ok) return [];
+
+  const data = await res.json() as PodcastIndexResponse;
+  return (data.feeds || []).map((f) => ({
+    title: f.title || "غير معروف",
+    description: f.description || null,
+    image: f.artwork || f.image || null,
+    author: f.author || f.ownerName || null,
+    categories: f.categories ? Object.values(f.categories) : null,
+    source_links: buildPodcastSourceLinks(f.title || query, f.url || f.link),
+  }));
+}
+
 async function searchItunesPodcasts(query: string): Promise<PodcastResult[]> {
+  const encoded = encodeURIComponent(query);
+  const res = await fetch(
+    `https://itunes.apple.com/search?term=${encoded}&entity=podcast&limit=5`
+  );
+  const data = await res.json() as ItunesResponse;
+  return (data.results || []).map((p) => ({
+    title: p.trackName || p.collectionName || "غير معروف",
+    description: null,
+    image: p.artworkUrl600 || p.artworkUrl100 || null,
+    author: p.artistName || null,
+    categories: p.genres || null,
+    source_links: buildPodcastSourceLinks(
+      p.trackName || p.collectionName || query,
+      p.feedUrl
+    ),
+  }));
+}
+
+async function searchPodcasts(query: string): Promise<PodcastResult[]> {
   try {
-    const encoded = encodeURIComponent(query);
-    const res = await fetch(
-      `https://itunes.apple.com/search?term=${encoded}&entity=podcast&limit=5`
-    );
-    const data = await res.json() as ItunesResponse;
-    return (data.results || []).map((p) => ({
-      title: p.trackName || p.collectionName || "غير معروف",
-      description: null,
-      image: p.artworkUrl600 || p.artworkUrl100 || null,
-      author: p.artistName || null,
-      categories: p.genres || null,
-      source_links: buildPodcastSourceLinks(
-        p.trackName || p.collectionName || query,
-        p.feedUrl
-      ),
-    }));
+    const indexResults = await searchPodcastIndex(query);
+    if (indexResults.length > 0) return indexResults;
+    return await searchItunesPodcasts(query);
   } catch {
     return [];
   }
@@ -119,9 +178,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
               },
               {
                 type: "text",
-                text: `This is a podcast cover image. Extract the podcast name and host from this image. Respond in JSON format only:
-                {"podcast_title": "title here", "host": "host name or null"}
-                If you cannot identify the podcast, still respond with whatever text you can see.`,
+                text: `This is a podcast cover image. Extract the podcast name and host from this image. Respond in JSON format only: {"podcast_title": "title here", "host": "host name or null"}. If you cannot identify the podcast, still respond with whatever text you can see.`,
               },
             ],
           },
@@ -160,10 +217,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
         messages: [
           {
             role: "user",
-            content: `From this podcast audio transcript, extract the podcast name if mentioned. Respond in JSON:
-            {"podcast_title": "title or best guess based on content", "host": "host name or null"}
-            
-            Transcript: "${transcription?.substring(0, 500)}"`,
+            content: `From this podcast audio transcript, extract the podcast name if mentioned. Respond in JSON: {"podcast_title": "title or best guess based on content", "host": "host name or null"}\n\nTranscript: "${transcription?.substring(0, 500)}"`,
           },
         ],
       });
@@ -180,10 +234,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
       }
     }
 
-    let results: PodcastResult[] = [];
-    if (searchQuery) {
-      results = await searchItunesPodcasts(searchQuery);
-    }
+    const results: PodcastResult[] = searchQuery ? await searchPodcasts(searchQuery) : [];
 
     res.json({ results, method, transcription });
   } catch (err: unknown) {
