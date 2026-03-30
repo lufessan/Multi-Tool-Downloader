@@ -4,19 +4,20 @@ import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-import { ai } from "@workspace/integrations-gemini-ai";
+import { toFile } from "groq-sdk";
+import { groq, TRANSCRIPTION_MODEL, isGroqAvailable } from "../../lib/groq-client";
 
 const router: IRouter = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+  limits: { fileSize: 200 * 1024 * 1024 },
 });
 
 const VIDEO_EXTS = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
 
-// Max inline audio size for Gemini (leave buffer below 8MB)
-const MAX_INLINE_BYTES = 6.5 * 1024 * 1024;
+// Groq Whisper: max 25MB per request
+const MAX_AUDIO_BYTES = 24 * 1024 * 1024;
 
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -31,25 +32,19 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
-// Convert any audio/video to compact 16kHz mono MP3 for Gemini
 function toCompactMp3(inputPath: string, outputPath: string): Promise<void> {
   return runFfmpeg([
     "-i", inputPath,
-    "-vn",
-    "-ar", "16000",
-    "-ac", "1",
-    "-b:a", "32k",
-    "-f", "mp3",
-    "-y", outputPath,
+    "-vn", "-ar", "16000", "-ac", "1", "-b:a", "32k",
+    "-f", "mp3", "-y", outputPath,
   ]);
 }
 
-// Split a long MP3 into chunks of ~5 minutes each
 async function splitMp3(inputPath: string, chunkDir: string): Promise<string[]> {
   await runFfmpeg([
     "-i", inputPath,
     "-f", "segment",
-    "-segment_time", "290",
+    "-segment_time", "300",
     "-c", "copy",
     path.join(chunkDir, "chunk_%03d.mp3"),
   ]);
@@ -60,26 +55,15 @@ async function splitMp3(inputPath: string, chunkDir: string): Promise<string[]> 
     .map((f) => path.join(chunkDir, f));
 }
 
-async function transcribeBuffer(audioBuffer: Buffer, mimeType: string, language?: string): Promise<string> {
-  const base64 = audioBuffer.toString("base64");
-  const langInstruction = language
-    ? `Transcribe this audio in the ${language} language. Output only the transcription, no explanations or notes.`
-    : "Transcribe this audio accurately. Output only the transcription text, no explanations or notes.";
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        parts: [
-          { inlineData: { mimeType, data: base64 } },
-          { text: langInstruction },
-        ],
-      },
-    ],
-    config: { maxOutputTokens: 8192 },
+async function transcribeBuffer(audioBuffer: Buffer, filename: string, language?: string): Promise<string> {
+  const file = await toFile(audioBuffer, filename, { type: "audio/mp3" });
+  const result = await groq.audio.transcriptions.create({
+    file,
+    model: TRANSCRIPTION_MODEL,
+    response_format: "json",
+    ...(language && language !== "auto" ? { language } : {}),
   });
-
-  return response.text ?? "";
+  return result.text;
 }
 
 async function transcribeFile(
@@ -92,22 +76,18 @@ async function transcribeFile(
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "transcribe-"));
 
   try {
-    // Save original file
     const inputPath = path.join(tmpDir, `input${ext || ".mp3"}`);
     await fs.writeFile(inputPath, fileBuffer);
 
-    // Convert to compact mono MP3
     const compactPath = path.join(tmpDir, "compact.mp3");
     await toCompactMp3(inputPath, compactPath);
 
     const compactBuf = await fs.readFile(compactPath);
 
-    // If small enough, transcribe in one shot
-    if (compactBuf.length <= MAX_INLINE_BYTES) {
-      return await transcribeBuffer(compactBuf, "audio/mp3", language);
+    if (compactBuf.length <= MAX_AUDIO_BYTES) {
+      return await transcribeBuffer(compactBuf, "audio.mp3", language);
     }
 
-    // File is large — split into chunks and transcribe each
     const chunkDir = path.join(tmpDir, "chunks");
     await fs.mkdir(chunkDir);
     const chunks = await splitMp3(compactPath, chunkDir);
@@ -115,8 +95,10 @@ async function transcribeFile(
     const parts: string[] = [];
     for (const chunkPath of chunks) {
       const chunkBuf = await fs.readFile(chunkPath);
-      const text = await transcribeBuffer(chunkBuf, "audio/mp3", language);
-      if (text.trim()) parts.push(text.trim());
+      if (chunkBuf.length > 100) {
+        const text = await transcribeBuffer(chunkBuf, path.basename(chunkPath), language);
+        if (text.trim()) parts.push(text.trim());
+      }
     }
 
     return parts.join(" ");
@@ -125,10 +107,13 @@ async function transcribeFile(
   }
 }
 
-// Transcribe audio files (MP3, WAV, M4A, OGG, etc.)
 router.post("/audio", upload.single("file"), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "يرجى رفع ملف صوتي" });
+    return;
+  }
+  if (!isGroqAvailable()) {
+    res.status(503).json({ error: "خدمة التفريغ غير مفعّلة. يرجى إضافة GROQ_API_KEY." });
     return;
   }
 
@@ -143,10 +128,13 @@ router.post("/audio", upload.single("file"), async (req, res) => {
   }
 });
 
-// Transcribe video files (MP4, MKV, AVI, etc.) — extracts audio first via ffmpeg
 router.post("/video", upload.single("file"), async (req, res) => {
   if (!req.file) {
     res.status(400).json({ error: "يرجى رفع ملف فيديو" });
+    return;
+  }
+  if (!isGroqAvailable()) {
+    res.status(503).json({ error: "خدمة التفريغ غير مفعّلة. يرجى إضافة GROQ_API_KEY." });
     return;
   }
 
