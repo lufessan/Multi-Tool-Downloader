@@ -3,7 +3,7 @@ import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-import { validatePublicUrl } from "../../lib/url-validation";
+import { validatePublicUrlWithDns } from "../../lib/url-validation";
 
 const router: IRouter = Router();
 
@@ -71,7 +71,7 @@ router.post("/info", async (req, res) => {
     return;
   }
 
-  const urlCheck = validatePublicUrl(url);
+  const urlCheck = await validatePublicUrlWithDns(url);
   if (!urlCheck.valid) {
     res.status(400).json({ error: urlCheck.error || "رابط غير صالح" });
     return;
@@ -141,7 +141,7 @@ router.post("/clip", async (req, res) => {
     return;
   }
 
-  const urlCheck = validatePublicUrl(url);
+  const urlCheck = await validatePublicUrlWithDns(url);
   if (!urlCheck.valid) {
     res.status(400).json({ error: urlCheck.error || "رابط غير صالح" });
     return;
