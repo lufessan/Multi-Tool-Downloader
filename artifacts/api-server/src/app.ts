@@ -40,7 +40,7 @@ const frontendDist = process.env["FRONTEND_DIST"];
 if (frontendDist && fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
   // SPA fallback — all non-API routes serve index.html
-  app.get("*", (_req, res) => {
+  app.get("/{*path}", (_req, res) => {
     res.sendFile(path.join(frontendDist, "index.html"));
   });
 }
