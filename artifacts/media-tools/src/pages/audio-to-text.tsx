@@ -1,9 +1,34 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
 import { Loader2, Copy, FileText, UploadCloud } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const LANGUAGES = [
+  { code: "auto", label: "تلقائي (اكتشاف اللغة تلقائياً)" },
+  { code: "ar", label: "العربية" },
+  { code: "en", label: "الإنجليزية" },
+  { code: "fr", label: "الفرنسية" },
+  { code: "es", label: "الإسبانية" },
+  { code: "de", label: "الألمانية" },
+  { code: "it", label: "الإيطالية" },
+  { code: "pt", label: "البرتغالية" },
+  { code: "ru", label: "الروسية" },
+  { code: "ja", label: "اليابانية" },
+  { code: "ko", label: "الكورية" },
+  { code: "zh", label: "الصينية" },
+  { code: "tr", label: "التركية" },
+  { code: "fa", label: "الفارسية" },
+  { code: "hi", label: "الهندية" },
+  { code: "ur", label: "الأوردية" },
+  { code: "id", label: "الإندونيسية" },
+  { code: "nl", label: "الهولندية" },
+  { code: "pl", label: "البولندية" },
+  { code: "sv", label: "السويدية" },
+  { code: "el", label: "اليونانية" },
+];
 
 interface TranscriptionResult {
   text: string;
@@ -13,11 +38,12 @@ interface TranscriptionResult {
 
 export default function AudioToText() {
   const [file, setFile] = useState<File | null>(null);
-  const [language, setLanguage] = useState("");
+  const [language, setLanguage] = useState("auto");
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [result, setResult] = useState<TranscriptionResult | null>(null);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const elapsed = useElapsedTimer(isTranscribing);
 
   const handleTranscribe = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +53,7 @@ export default function AudioToText() {
 
     const formData = new FormData();
     formData.append("file", file);
-    if (language) formData.append("language", language);
+    if (language && language !== "auto") formData.append("language", language);
 
     try {
       const res = await fetch("/api/transcriber/audio", {
@@ -82,18 +108,41 @@ export default function AudioToText() {
               </div>
               <p className="text-xl font-bold">{file ? file.name : "اضغط هنا لاختيار ملف صوتي"}</p>
               <p className="text-base text-muted-foreground mt-2 font-medium">MP3, WAV, M4A, OGG, FLAC وغيرها</p>
+              {file && (
+                <p className="text-sm text-primary mt-1 font-semibold">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
             </div>
 
             <div className="space-y-3">
-              <label className="text-base font-bold">لغة الملف (اختياري)</label>
-              <Input
-                placeholder="مثال: ar للعربية، en للإنجليزية، fr للفرنسية"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                dir="ltr"
-                className="text-left h-12"
-              />
+              <label className="text-base font-bold">لغة الملف الصوتي</label>
+              <Select value={language} onValueChange={setLanguage} dir="rtl">
+                <SelectTrigger className="h-12 font-bold">
+                  <SelectValue placeholder="اختر اللغة أو اتركها تلقائياً" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LANGUAGES.map(l => (
+                    <SelectItem key={l.code} value={l.code} className="font-medium">
+                      {l.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">تحديد اللغة يزيد من دقة التفريغ</p>
             </div>
+
+            {isTranscribing && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground px-1">
+                  <span>جاري التفريغ بالذكاء الاصطناعي...</span>
+                  <span className="font-bold tabular-nums">{formatElapsed(elapsed)}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                </div>
+              </div>
+            )}
 
             <Button
               type="submit"
@@ -106,7 +155,7 @@ export default function AudioToText() {
               ) : (
                 <FileText className="w-6 h-6 ml-2" />
               )}
-              {isTranscribing ? "جاري المعالجة والتفريغ..." : "بدء التفريغ"}
+              {isTranscribing ? `جاري التفريغ... (${formatElapsed(elapsed)})` : "بدء التفريغ"}
             </Button>
           </form>
         </CardContent>
@@ -115,8 +164,20 @@ export default function AudioToText() {
       {result && (
         <Card className="animate-in fade-in slide-in-from-bottom-4 border-primary/20 bg-primary/5">
           <CardContent className="pt-8 space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-2xl">النص المستخرج</h3>
+            <div className="flex justify-between items-center flex-wrap gap-3">
+              <div>
+                <h3 className="font-bold text-2xl">النص المستخرج</h3>
+                {result.language && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    اللغة المكتشفة: <strong>{LANGUAGES.find(l => l.code === result.language)?.label || result.language}</strong>
+                  </p>
+                )}
+                {result.duration && (
+                  <p className="text-sm text-muted-foreground">
+                    مدة الصوت: <strong>{formatElapsed(Math.round(result.duration))}</strong>
+                  </p>
+                )}
+              </div>
               <Button variant="secondary" size="sm" onClick={copyText} className="font-bold">
                 <Copy className="w-4 h-4 ml-2" />
                 نسخ النص

@@ -2,13 +2,15 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Music, UploadCloud } from "lucide-react";
+import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
+import { Loader2, Music, UploadCloud, HardDrive } from "lucide-react";
 
 export default function ToMp3() {
   const [file, setFile] = useState<File | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const elapsed = useElapsedTimer(isConverting);
 
   const handleConvert = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,11 +61,29 @@ export default function ToMp3() {
               </div>
               <p className="text-xl font-bold">{file ? file.name : "اضغط هنا لاختيار فيديو"}</p>
               <p className="text-base text-muted-foreground mt-2 font-medium">يدعم جميع صيغ الفيديو المعروفة (MP4, MKV, AVI والمزيد)</p>
+              {file && (
+                <p className="text-sm text-primary font-semibold mt-2 flex items-center justify-center gap-1">
+                  <HardDrive className="w-3.5 h-3.5" />
+                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              )}
             </div>
+
+            {isConverting && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground px-1">
+                  <span>جاري استخراج الصوت وتحويله...</span>
+                  <span className="font-bold tabular-nums">{formatElapsed(elapsed)}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                </div>
+              </div>
+            )}
 
             <Button type="submit" size="lg" className="w-full h-14 text-lg font-bold" disabled={!file || isConverting}>
               {isConverting ? <Loader2 className="w-6 h-6 animate-spin ml-2" /> : <Music className="w-6 h-6 ml-2" />}
-              {isConverting ? "جاري التحويل..." : "تحويل وتنزيل"}
+              {isConverting ? `جاري التحويل... (${formatElapsed(elapsed)})` : "تحويل وتنزيل MP3"}
             </Button>
           </form>
         </CardContent>

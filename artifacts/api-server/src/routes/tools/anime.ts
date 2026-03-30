@@ -208,9 +208,11 @@ router.post(
         }
 
         const traceMoeData = await traceMoeRes.json() as TraceMoeResponse;
-        const traceResults = (traceMoeData.result || []).slice(0, 3);
+        const allTraceResults = (traceMoeData.result || []);
+        const topTraceResult = allTraceResults[0];
+        const topSimilarity = topTraceResult?.similarity ?? 0;
 
-        if (traceResults.length === 0) {
+        if (allTraceResults.length === 0 || topSimilarity < 0.5) {
           const base64 = imageFile.buffer.toString("base64");
           const mimeType = imageFile.mimetype;
 
@@ -254,9 +256,9 @@ router.post(
         }
 
         const results: AnimeResult[] = [];
-        const seen = new Set<number>();
 
-        for (const r of traceResults) {
+        {
+          const r = topTraceResult;
           const anilistRaw = r.anilist;
           const anilistId: number | null =
             typeof anilistRaw === "number"
@@ -265,38 +267,33 @@ router.post(
               ? Number(anilistRaw.id)
               : null;
 
-          if (anilistId === null || seen.has(anilistId)) continue;
-          seen.add(anilistId);
+          if (anilistId !== null) {
+            const anilistObj = typeof anilistRaw === "object" && anilistRaw !== null ? anilistRaw as TraceMoeAnilist : null;
+            const titleEn = anilistObj?.title?.english || anilistObj?.title?.romaji || String(anilistId);
+            const titleRomaji = anilistObj?.title?.romaji || null;
 
-          const anilistObj = typeof anilistRaw === "object" && anilistRaw !== null ? anilistRaw as TraceMoeAnilist : null;
-          const titleEn = anilistObj?.title?.english || anilistObj?.title?.romaji || String(anilistId);
-          const titleRomaji = anilistObj?.title?.romaji || null;
+            const extra = await getAniListInfo(anilistId);
+            const genres = extra.genres || null;
+            const descriptionText = extra.description || null;
+            const malId = extra.mal_id || null;
 
-          let genres: string[] | null = null;
-          let descriptionText: string | null = null;
-          let malId: number | null = null;
-
-          const extra = await getAniListInfo(anilistId);
-          genres = extra.genres || null;
-          descriptionText = extra.description || null;
-          malId = extra.mal_id || null;
-
-          results.push({
-            title: titleEn || titleRomaji || "غير معروف",
-            title_ar: null,
-            title_en: titleEn,
-            character: null,
-            episode: r.episode !== undefined && r.episode !== null ? Number(r.episode) : null,
-            similarity: r.similarity ? Math.round(r.similarity * 100) : null,
-            from: r.from ?? null,
-            to: r.to ?? null,
-            thumbnail: r.image || null,
-            anilist_id: anilistId,
-            mal_id: malId,
-            genres,
-            description: descriptionText,
-            source_links: buildSourceLinks(titleEn, anilistId, malId ?? undefined),
-          });
+            results.push({
+              title: titleEn || titleRomaji || "غير معروف",
+              title_ar: null,
+              title_en: titleEn,
+              character: null,
+              episode: r.episode !== undefined && r.episode !== null ? Number(r.episode) : null,
+              similarity: r.similarity ? Math.round(r.similarity * 100) : null,
+              from: r.from ?? null,
+              to: r.to ?? null,
+              thumbnail: r.image || null,
+              anilist_id: anilistId,
+              mal_id: malId,
+              genres,
+              description: descriptionText,
+              source_links: buildSourceLinks(titleEn, anilistId, malId ?? undefined),
+            });
+          }
         }
 
         res.json({ results, method: "image" });

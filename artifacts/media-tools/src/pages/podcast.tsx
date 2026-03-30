@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
 import { Loader2, Radio, UploadCloud, Link as LinkIcon, FileText } from "lucide-react";
 import type { PodcastRecognitionResponse, PodcastResult, SourceLink } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ export default function Podcast() {
   const { toast } = useToast();
   const imageRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLInputElement>(null);
+  const elapsed = useElapsedTimer(isSearching);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,9 +79,21 @@ export default function Podcast() {
               </div>
             </div>
 
+            {isSearching && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground px-1">
+                  <span>جاري البحث في قواعد بيانات البودكاست...</span>
+                  <span className="font-bold tabular-nums">{formatElapsed(elapsed)}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                </div>
+              </div>
+            )}
+
             <Button type="submit" size="lg" className="w-full h-14 text-xl font-bold" disabled={isSearching}>
               {isSearching ? <Loader2 className="w-6 h-6 animate-spin ml-2" /> : <Radio className="w-6 h-6 ml-2" />}
-              {isSearching ? "جاري البحث..." : "ابحث عن البودكاست"}
+              {isSearching ? `جاري البحث... (${formatElapsed(elapsed)})` : "ابحث عن البودكاست"}
             </Button>
           </form>
         </CardContent>

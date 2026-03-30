@@ -1,14 +1,32 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Scissors, Search } from "lucide-react";
+import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
+import { Loader2, Scissors, Search, Clock, HardDrive } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetYouTubeInfo } from "@workspace/api-client-react";
 import type { VideoFormat } from "@workspace/api-client-react";
 
 type ClipType = "video" | "audio" | "mp3";
+
+function timeToSeconds(t: string): number {
+  const parts = t.split(":").map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] || 0;
+}
+
+function estimateClipSize(format: VideoFormat | undefined, startTime: string, endTime: string, totalDuration: number | null | undefined): string | null {
+  if (!format?.filesize || !totalDuration || totalDuration <= 0) return null;
+  const clipSecs = timeToSeconds(endTime) - timeToSeconds(startTime);
+  if (clipSecs <= 0) return null;
+  const estimated = (format.filesize / totalDuration) * clipSecs;
+  return estimated > 1024 * 1024
+    ? `${(estimated / 1024 / 1024).toFixed(1)} MB`
+    : `${(estimated / 1024).toFixed(0)} KB`;
+}
 
 export default function Clipper() {
   const [url, setUrl] = useState("");
@@ -18,8 +36,9 @@ export default function Clipper() {
   const [formatId, setFormatId] = useState<string>("best");
   const [isClipping, setIsClipping] = useState(false);
   const { toast } = useToast();
-
   const getInfo = useGetYouTubeInfo();
+  const elapsed = useElapsedTimer(isClipping);
+  const fetchElapsed = useElapsedTimer(getInfo.isPending);
 
   const handleFetchInfo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,12 +51,9 @@ export default function Clipper() {
 
   const handleTypeChange = (val: string) => {
     if (val === "video" || val === "audio" || val === "mp3") {
-      setType(val);
+      setType(val as ClipType);
+      setFormatId("best");
     }
-  };
-
-  const handleFormatChange = (val: string) => {
-    setFormatId(val);
   };
 
   const handleClip = async (e: React.FormEvent) => {
@@ -52,22 +68,26 @@ export default function Clipper() {
         type,
         format_id: formatId === "best" ? null : formatId,
       };
-      const res = await fetch('/api/clipper/clip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+      const res = await fetch("/api/clipper/clip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("فشل القص");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || "فشل القص");
+      }
       const blob = await res.blob();
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `clip.${type === 'mp3' ? 'mp3' : type === 'audio' ? 'm4a' : 'mp4'}`;
+      a.download = `clip.${type === "mp3" ? "mp3" : type === "audio" ? "m4a" : "mp4"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       toast({ title: "اكتمل القص", description: "تم تنزيل المقطع بنجاح" });
-    } catch {
-      toast({ title: "خطأ", description: "حدث خطأ أثناء قص المقطع", variant: "destructive" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء قص المقطع";
+      toast({ title: "خطأ", description: msg, variant: "destructive" });
     } finally {
       setIsClipping(false);
     }
@@ -77,6 +97,10 @@ export default function Clipper() {
   const audioFormats = getInfo.data?.formats?.filter((f: VideoFormat) => f.resolution === "صوت فقط") ?? [];
   const showFormats = type === "video" ? videoFormats : audioFormats;
 
+  const selectedFormat = showFormats.find((f: VideoFormat) => f.format_id === formatId);
+  const estimatedSize = estimateClipSize(selectedFormat, startTime, endTime, getInfo.data?.duration);
+  const clipDuration = Math.max(0, timeToSeconds(endTime) - timeToSeconds(startTime));
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-2xl">
       <div className="space-y-2">
@@ -85,8 +109,8 @@ export default function Clipper() {
       </div>
 
       <Card className="border-border/50 bg-card/40">
-        <CardContent className="pt-8">
-          <form onSubmit={handleFetchInfo} className="flex gap-4 mb-6">
+        <CardContent className="pt-8 space-y-4">
+          <form onSubmit={handleFetchInfo} className="flex gap-4">
             <Input
               placeholder="https://youtube.com/watch?v=..."
               value={url}
@@ -96,10 +120,55 @@ export default function Clipper() {
             />
             <Button type="submit" size="lg" className="h-12 px-6 shrink-0" disabled={getInfo.isPending}>
               {getInfo.isPending ? <Loader2 className="w-5 h-5 animate-spin ml-2" /> : <Search className="w-5 h-5 ml-2" />}
-              <span className="font-bold">بحث</span>
+              <span className="font-bold">جلب البيانات</span>
             </Button>
           </form>
 
+          {getInfo.isPending && (
+            <div className="space-y-2 pt-1">
+              <div className="flex justify-between text-sm text-muted-foreground px-1">
+                <span>جاري جلب بيانات الفيديو...</span>
+                <span className="font-bold tabular-nums">{formatElapsed(fetchElapsed)}</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {getInfo.data && (
+        <Card className="border-primary/20 bg-card/60 overflow-hidden animate-in slide-in-from-bottom-4 duration-400">
+          <div className="flex gap-4 p-5">
+            {getInfo.data.thumbnail && (
+              <img
+                src={getInfo.data.thumbnail}
+                alt={getInfo.data.title}
+                className="w-40 h-24 object-cover rounded-xl shrink-0 bg-muted"
+              />
+            )}
+            <div className="flex-1 min-w-0 space-y-1.5 pt-1">
+              <p className="font-bold text-base leading-snug line-clamp-2">{getInfo.data.title}</p>
+              {getInfo.data.uploader && (
+                <p className="text-sm text-primary font-semibold">{getInfo.data.uploader}</p>
+              )}
+              {getInfo.data.duration && (
+                <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  المدة الكاملة: {formatElapsed(getInfo.data.duration)}
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card className="border-border/50 bg-card/40">
+        <CardHeader className="pb-2 pt-6 px-8">
+          <CardTitle className="text-xl">إعدادات القص</CardTitle>
+        </CardHeader>
+        <CardContent className="px-8 pb-8">
           <form onSubmit={handleClip} className="space-y-6">
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-3">
@@ -124,6 +193,21 @@ export default function Clipper() {
               </div>
             </div>
 
+            {clipDuration > 0 && (
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 shrink-0" />
+                  مدة المقطع: <strong className="text-foreground">{formatElapsed(clipDuration)}</strong>
+                </span>
+                {estimatedSize && (
+                  <span className="flex items-center gap-1.5">
+                    <HardDrive className="w-4 h-4 shrink-0" />
+                    الحجم التقريبي: <strong className="text-foreground">{estimatedSize}</strong>
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="space-y-3">
               <label className="text-base font-bold">صيغة المخرجات</label>
               <Select value={type} onValueChange={handleTypeChange} dir="rtl">
@@ -141,7 +225,7 @@ export default function Clipper() {
             {showFormats.length > 0 && (
               <div className="space-y-3">
                 <label className="text-base font-bold">الجودة</label>
-                <Select value={formatId} onValueChange={handleFormatChange} dir="rtl">
+                <Select value={formatId} onValueChange={setFormatId} dir="rtl">
                   <SelectTrigger className="h-12 font-bold">
                     <SelectValue placeholder="اختر الجودة" />
                   </SelectTrigger>
@@ -160,14 +244,26 @@ export default function Clipper() {
 
             {!getInfo.data && (
               <p className="text-sm text-muted-foreground text-center py-2">
-                ابحث عن الفيديو أولاً لاختيار الجودة المطلوبة، أو اقص مباشرة بأفضل جودة
+                اضغط "جلب البيانات" أولاً لعرض معلومات الفيديو وخيارات الجودة
               </p>
+            )}
+
+            {isClipping && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm text-muted-foreground px-1">
+                  <span>جاري القص والمعالجة...</span>
+                  <span className="font-bold tabular-nums">{formatElapsed(elapsed)}</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                </div>
+              </div>
             )}
 
             <div className="pt-2">
               <Button type="submit" size="lg" className="w-full h-14 text-lg font-bold" disabled={isClipping || !url}>
                 {isClipping ? <Loader2 className="w-6 h-6 animate-spin ml-2" /> : <Scissors className="w-6 h-6 ml-2" />}
-                {isClipping ? "جاري القص والمعالجة..." : "بدء القص والتنزيل"}
+                {isClipping ? `جاري القص... (${formatElapsed(elapsed)})` : "بدء القص والتنزيل"}
               </Button>
             </div>
           </form>

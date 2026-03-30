@@ -147,9 +147,15 @@ router.post("/download", async (req, res) => {
     if (type === "audio") {
       args.push("-x", "--audio-format", "mp3", "--audio-quality", "0");
     } else if (format_id) {
-      args.push("-f", `${format_id}+bestaudio[ext=m4a]/${format_id}/best`);
+      args.push(
+        "-f", `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/${format_id}/best`,
+        "--merge-output-format", "mp4"
+      );
     } else {
-      args.push("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best");
+      args.push(
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best",
+        "--merge-output-format", "mp4"
+      );
     }
 
     args.push(url);
