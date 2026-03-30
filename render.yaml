@@ -14,3 +14,5 @@ services:
         value: /app/artifacts/media-tools/dist/public
       - key: GROQ_API_KEY
         sync: false
+      - key: YOUTUBE_COOKIES
+        sync: false
