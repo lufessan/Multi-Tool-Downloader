@@ -17,6 +17,7 @@ interface YtDlpFormat {
   vcodec?: string;
   acodec?: string;
   format_note?: string;
+  protocol?: string;
 }
 
 interface YtDlpInfo {
@@ -63,6 +64,13 @@ function timeToSeconds(time: string): number {
   return parts[0] || 0;
 }
 
+// Find a file in directory by prefix
+async function findFile(dir: string, prefix: string): Promise<string | null> {
+  const files = await fs.readdir(dir);
+  const found = files.find((f) => f.startsWith(prefix + "."));
+  return found ? path.join(dir, found) : null;
+}
+
 // Get YouTube video info
 router.post("/info", async (req, res) => {
   const { url } = req.body as { url?: string };
@@ -87,16 +95,18 @@ router.post("/info", async (req, res) => {
 
     const info = JSON.parse(output.trim()) as YtDlpInfo;
 
+    // Show all video-bearing formats (including HLS) — we handle them properly in /clip
     const formats = (info.formats || [])
-      .filter((f) => f.vcodec !== "none" || f.acodec !== "none")
+      .filter((f) => f.vcodec && f.vcodec !== "none")
       .map((f) => ({
         format_id: f.format_id,
         ext: f.ext,
-        resolution: f.resolution || (f.height ? `${f.height}p` : "صوت فقط"),
+        resolution: f.resolution || (f.height ? `${f.height}p` : "فيديو"),
         filesize: f.filesize ?? f.filesize_approx ?? null,
         vcodec: f.vcodec && f.vcodec !== "none" ? f.vcodec : null,
         acodec: f.acodec && f.acodec !== "none" ? f.acodec : null,
         note: f.format_note ?? null,
+        protocol: f.protocol ?? null,
       }))
       .filter(
         (f, i, arr) =>
@@ -104,10 +114,6 @@ router.post("/info", async (req, res) => {
       );
 
     formats.sort((a, b) => {
-      const aIsVideo = a.vcodec !== null;
-      const bIsVideo = b.vcodec !== null;
-      if (aIsVideo && !bIsVideo) return -1;
-      if (!aIsVideo && bIsVideo) return 1;
       const aH = parseInt(a.resolution) || 0;
       const bH = parseInt(b.resolution) || 0;
       return bH - aH;
@@ -127,6 +133,8 @@ router.post("/info", async (req, res) => {
 });
 
 // Clip a section from a YouTube video
+// Strategy: download video-section and audio separately via yt-dlp native HLS downloader,
+// then combine locally with ffmpeg (avoids ffmpeg's broken HLS audio mux bug).
 router.post("/clip", async (req, res) => {
   const { url, start_time, end_time, format_id, type } = req.body as {
     url?: string;
@@ -153,87 +161,111 @@ router.post("/clip", async (req, res) => {
     res.status(400).json({ error: "وقت النهاية يجب أن يكون بعد وقت البداية" });
     return;
   }
+  const duration = endSec - startSec;
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "clip-"));
 
   try {
     const sectionSpec = `*${start_time}-${end_time}`;
-    // Use a fixed output path so we can find the file reliably after download
-    const outputTemplate = path.join(tmpDir, "source.%(ext)s");
-
-    const dlArgs: string[] = [
-      "--no-playlist",
-      "--no-warnings",
-      "--download-sections", sectionSpec,
-      "-o", outputTemplate,
-    ];
 
     if (type === "audio" || type === "mp3") {
-      dlArgs.push("-f", "bestaudio[ext=m4a]/bestaudio");
-    } else {
-      if (format_id) {
-        // Try the chosen format with m4a audio, fall back to best audio, then best overall
-        dlArgs.push("-f", `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/${format_id}/best`);
+      // ── Audio-only path ──────────────────────────────────────────────────
+      // Download full audio using native downloader (avoids ffmpeg HLS issues)
+      await runYtDlp([
+        "--no-playlist", "--no-warnings",
+        "--downloader", "native",
+        "-f", "bestaudio",
+        "-o", path.join(tmpDir, "audio.%(ext)s"),
+        url,
+      ]);
+
+      const audioSrc = await findFile(tmpDir, "audio");
+      if (!audioSrc) throw new Error("فشل تنزيل الصوت");
+
+      const outputExt = type === "mp3" ? "mp3" : "m4a";
+      const outputPath = path.join(tmpDir, `clip.${outputExt}`);
+      const contentType = type === "mp3" ? "audio/mpeg" : "audio/mp4";
+
+      if (type === "mp3") {
+        await runFfmpeg([
+          "-ss", String(startSec), "-t", String(duration),
+          "-i", audioSrc,
+          "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+          "-y", outputPath,
+        ]);
       } else {
-        dlArgs.push("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best");
+        await runFfmpeg([
+          "-ss", String(startSec), "-t", String(duration),
+          "-i", audioSrc,
+          "-vn", "-c:a", "aac", "-b:a", "192k",
+          "-y", outputPath,
+        ]);
       }
-      // Force merge output as mp4 so video + audio always end up in one file
-      dlArgs.push("--merge-output-format", "mp4");
-      // Also remux to mp4 if needed
-      dlArgs.push("--remux-video", "mp4");
+
+      const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}.${outputExt}`;
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.sendFile(outputPath, (sendErr) => {
+        if (sendErr && !res.headersSent) {
+          req.log.error({ err: sendErr }, "Error streaming clip");
+          res.status(500).end();
+        }
+        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      });
+      return;
     }
 
-    dlArgs.push(url);
-    await runYtDlp(dlArgs);
+    // ── Video path ────────────────────────────────────────────────────────
+    // Two-step: download video section + full audio separately (native HLS downloader),
+    // then combine locally with ffmpeg.
 
-    const downloadedFiles = await fs.readdir(tmpDir);
-    if (downloadedFiles.length === 0) throw new Error("فشل تنزيل الفيديو");
+    // Pick video-only format
+    const videoFormat =
+      format_id && format_id !== "best"
+        ? `${format_id}/bestvideo[ext=mp4]/bestvideo`
+        : "bestvideo[ext=mp4]/bestvideo";
 
-    // For video: prefer .mp4 file (merged result). For audio: pick first file.
-    let sourceFileName = downloadedFiles[0];
-    if (type !== "audio" && type !== "mp3") {
-      const mp4File = downloadedFiles.find((f) => f.endsWith(".mp4"));
-      if (mp4File) sourceFileName = mp4File;
-    }
-    const sourcePath = path.join(tmpDir, sourceFileName);
+    // Step 1: video section (native handles HLS sections cleanly)
+    await runYtDlp([
+      "--no-playlist", "--no-warnings",
+      "--downloader", "native",
+      "--download-sections", sectionSpec,
+      "-f", videoFormat,
+      "-o", path.join(tmpDir, "video.%(ext)s"),
+      url,
+    ]);
 
-    let outputPath: string;
-    let contentType: string;
+    // Step 2: full audio (native downloads full stream; we cut with ffmpeg locally)
+    await runYtDlp([
+      "--no-playlist", "--no-warnings",
+      "--downloader", "native",
+      "-f", "bestaudio",
+      "-o", path.join(tmpDir, "audio.%(ext)s"),
+      url,
+    ]);
 
-    if (type === "mp3") {
-      outputPath = path.join(tmpDir, "clip.mp3");
-      contentType = "audio/mpeg";
-      await runFfmpeg([
-        "-i", sourcePath,
-        "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-y", outputPath,
-      ]);
-    } else if (type === "audio") {
-      outputPath = path.join(tmpDir, "clip.m4a");
-      contentType = "audio/mp4";
-      await runFfmpeg([
-        "-i", sourcePath,
-        "-vn", "-c:a", "aac", "-b:a", "192k",
-        "-y", outputPath,
-      ]);
-    } else {
-      outputPath = path.join(tmpDir, "clip.mp4");
-      contentType = "video/mp4";
-      // Re-mux to ensure both video AND audio streams are included
-      await runFfmpeg([
-        "-i", sourcePath,
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-avoid_negative_ts", "make_zero",
-        "-movflags", "+faststart",
-        "-y", outputPath,
-      ]);
-    }
+    const videoSrc = await findFile(tmpDir, "video");
+    const audioSrc = await findFile(tmpDir, "audio");
+    if (!videoSrc || !audioSrc) throw new Error("فشل تنزيل الفيديو أو الصوت");
 
-    const ext = path.extname(outputPath);
-    const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}${ext}`;
+    const outputPath = path.join(tmpDir, "clip.mp4");
 
-    res.setHeader("Content-Type", contentType);
+    // Step 3: combine locally — video is already trimmed, cut audio to match
+    await runFfmpeg([
+      "-i", videoSrc,
+      "-ss", String(startSec), "-t", String(duration), "-i", audioSrc,
+      "-map", "0:v:0",
+      "-map", "1:a:0",
+      "-c:v", "copy",
+      "-c:a", "aac",
+      "-shortest",
+      "-avoid_negative_ts", "make_zero",
+      "-movflags", "+faststart",
+      "-y", outputPath,
+    ]);
+
+    const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}.mp4`;
+    res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.sendFile(outputPath, (sendErr) => {
       if (sendErr && !res.headersSent) {
