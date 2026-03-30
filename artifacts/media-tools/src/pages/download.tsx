@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
+import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
+import { formatElapsed } from "@/hooks/use-elapsed-timer";
 import { Loader2, Download as DownloadIcon, Search, Video, Music, Clock, HardDrive } from "lucide-react";
 import type { VideoFormat } from "@workspace/api-client-react";
 
@@ -14,8 +15,8 @@ export default function Download() {
   const getInfo = useGetVideoInfo();
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
   const [downloadType, setDownloadType] = useState<"video" | "audio">("video");
-  const fetchElapsed = useElapsedTimer(getInfo.isPending);
-  const downloadElapsed = useElapsedTimer(downloadingFormat !== null);
+  const fetchProgress = useSimulatedProgress(getInfo.isPending);
+  const downloadProgress = useSimulatedProgress(downloadingFormat !== null);
 
   const handleGetInfo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,12 +81,15 @@ export default function Download() {
 
           {getInfo.isPending && (
             <div className="space-y-2">
-              <div className="flex justify-between text-sm text-muted-foreground px-1">
-                <span>جاري جلب معلومات الرابط...</span>
-                <span className="font-bold tabular-nums">{formatElapsed(fetchElapsed)}</span>
+              <div className="flex justify-between items-center text-sm px-0.5">
+                <span className="text-muted-foreground">جاري جلب معلومات الرابط...</span>
+                <span className="font-black tabular-nums text-primary text-base">{fetchProgress}%</span>
               </div>
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+              <div className="h-3 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${fetchProgress}%` }}
+                />
               </div>
             </div>
           )}
@@ -143,12 +147,15 @@ export default function Download() {
 
                 {isDownloading && downloadingFormat === "best" && (
                   <div className="space-y-2">
-                    <div className="flex justify-between text-sm text-muted-foreground px-1">
-                      <span>جاري التنزيل والمعالجة...</span>
-                      <span className="font-bold tabular-nums">{formatElapsed(downloadElapsed)}</span>
+                    <div className="flex justify-between items-center text-sm px-0.5">
+                      <span className="text-muted-foreground">جاري التنزيل والمعالجة...</span>
+                      <span className="font-black tabular-nums text-primary text-base">{downloadProgress}%</span>
                     </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                    <div className="h-3 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${downloadProgress}%` }}
+                      />
                     </div>
                   </div>
                 )}
@@ -164,7 +171,7 @@ export default function Download() {
                     : <DownloadIcon className="w-5 h-5 ml-2" />
                   }
                   {isDownloading && downloadingFormat === "best"
-                    ? `جاري التنزيل... (${formatElapsed(downloadElapsed)})`
+                    ? `جاري التنزيل... ${downloadProgress}%`
                     : "تنزيل الآن"
                   }
                 </Button>
@@ -188,8 +195,11 @@ export default function Download() {
                       </div>
                       <div className="w-full sm:w-auto space-y-1">
                         {isDownloading && downloadingFormat === f.format_id && (
-                          <div className="h-1.5 bg-muted rounded-full overflow-hidden w-full sm:w-24">
-                            <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                          <div className="h-2 bg-muted rounded-full overflow-hidden w-full sm:w-28">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                              style={{ width: `${downloadProgress}%` }}
+                            />
                           </div>
                         )}
                         <Button

@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
+import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
+import { formatElapsed } from "@/hooks/use-elapsed-timer";
 import { Loader2, Scissors, Search, Clock, HardDrive } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGetYouTubeInfo } from "@workspace/api-client-react";
@@ -37,8 +38,8 @@ export default function Clipper() {
   const [isClipping, setIsClipping] = useState(false);
   const { toast } = useToast();
   const getInfo = useGetYouTubeInfo();
-  const elapsed = useElapsedTimer(isClipping);
-  const fetchElapsed = useElapsedTimer(getInfo.isPending);
+  const clipProgress = useSimulatedProgress(isClipping);
+  const fetchProgress = useSimulatedProgress(getInfo.isPending);
 
   const handleFetchInfo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,12 +127,15 @@ export default function Clipper() {
 
           {getInfo.isPending && (
             <div className="space-y-2 pt-1">
-              <div className="flex justify-between text-sm text-muted-foreground px-1">
-                <span>جاري جلب بيانات الفيديو...</span>
-                <span className="font-bold tabular-nums">{formatElapsed(fetchElapsed)}</span>
+              <div className="flex justify-between items-center text-sm px-0.5">
+                <span className="text-muted-foreground">جاري جلب بيانات الفيديو...</span>
+                <span className="font-black tabular-nums text-primary text-base">{fetchProgress}%</span>
               </div>
-              <div className="h-2 bg-muted rounded-full overflow-hidden">
-                <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+              <div className="h-3 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${fetchProgress}%` }}
+                />
               </div>
             </div>
           )}
@@ -250,12 +254,15 @@ export default function Clipper() {
 
             {isClipping && (
               <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground px-1">
-                  <span>جاري القص والمعالجة...</span>
-                  <span className="font-bold tabular-nums">{formatElapsed(elapsed)}</span>
+                <div className="flex justify-between items-center text-sm px-0.5">
+                  <span className="text-muted-foreground">جاري القص والمعالجة...</span>
+                  <span className="font-black tabular-nums text-primary text-base">{clipProgress}%</span>
                 </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                <div className="h-3 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${clipProgress}%` }}
+                  />
                 </div>
               </div>
             )}
@@ -263,7 +270,7 @@ export default function Clipper() {
             <div className="pt-2">
               <Button type="submit" size="lg" className="w-full h-14 text-lg font-bold" disabled={isClipping || !url}>
                 {isClipping ? <Loader2 className="w-6 h-6 animate-spin ml-2" /> : <Scissors className="w-6 h-6 ml-2" />}
-                {isClipping ? `جاري القص... (${formatElapsed(elapsed)})` : "بدء القص والتنزيل"}
+                {isClipping ? `جاري القص... ${clipProgress}%` : "بدء القص والتنزيل"}
               </Button>
             </div>
           </form>

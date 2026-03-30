@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useElapsedTimer, formatElapsed } from "@/hooks/use-elapsed-timer";
+import { useSimulatedProgress } from "@/hooks/use-simulated-progress";
 import { Loader2, Tv, UploadCloud, Link as LinkIcon, CheckCircle, AlertCircle } from "lucide-react";
 import type { AnimeRecognitionResponse, AnimeResult, SourceLink } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ export default function Anime() {
   const [result, setResult] = useState<AnimeRecognitionResponse | null>(null);
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
-  const elapsed = useElapsedTimer(isSearching);
+  const progress = useSimulatedProgress(isSearching);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
@@ -113,19 +113,22 @@ export default function Anime() {
 
             {isSearching && (
               <div className="space-y-2">
-                <div className="flex justify-between text-sm text-muted-foreground px-1">
-                  <span>جاري البحث في قواعد بيانات الأنمي...</span>
-                  <span className="font-bold tabular-nums">{formatElapsed(elapsed)}</span>
+                <div className="flex justify-between items-center text-sm px-0.5">
+                  <span className="text-muted-foreground">جاري البحث في قواعد بيانات الأنمي...</span>
+                  <span className="font-black tabular-nums text-primary text-base">{progress}%</span>
                 </div>
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                <div className="h-3 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
               </div>
             )}
 
             <Button type="submit" size="lg" className="w-full h-14 text-xl font-bold" disabled={isSearching}>
               {isSearching ? <Loader2 className="w-6 h-6 animate-spin ml-2" /> : <Tv className="w-6 h-6 ml-2" />}
-              {isSearching ? `جاري البحث... (${formatElapsed(elapsed)})` : "ابحث عن الأنمي"}
+              {isSearching ? `جاري البحث... ${progress}%` : "ابحث عن الأنمي"}
             </Button>
           </form>
         </CardContent>
