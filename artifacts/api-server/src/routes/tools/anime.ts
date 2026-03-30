@@ -192,7 +192,7 @@ router.post(
     try {
       if (imageFile) {
         const formData = new FormData();
-        const blob = new Blob([imageFile.buffer], { type: imageFile.mimetype });
+        const blob = new Blob([new Uint8Array(imageFile.buffer)], { type: imageFile.mimetype });
         formData.append("image", blob, imageFile.originalname || "image.jpg");
 
         const traceMoeRes = await fetch("https://api.trace.moe/search?anilistInfo", {

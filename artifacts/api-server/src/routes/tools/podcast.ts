@@ -141,7 +141,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
     } else if (audioFile) {
       method = "audio";
       const ext = path.extname(audioFile.originalname || ".mp3").toLowerCase();
-      const audioBuffer = audioFile.buffer;
+      const audioBuffer = new Uint8Array(audioFile.buffer);
       const audioFileObj = new File([audioBuffer], `audio${ext || ".mp3"}`, {
         type: audioFile.mimetype || "audio/mpeg",
       });

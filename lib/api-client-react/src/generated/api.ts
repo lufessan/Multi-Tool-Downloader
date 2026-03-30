@@ -462,13 +462,13 @@ export const useClipVideo = <
 };
 
 /**
- * @summary Transcribe audio or video file to text
+ * @summary Transcribe audio file to text
  */
-export const getTranscribeMediaUrl = () => {
-  return `/api/transcriber/transcribe`;
+export const getTranscribeAudioUrl = () => {
+  return `/api/transcriber/audio`;
 };
 
-export const transcribeMedia = async (
+export const transcribeAudio = async (
   transcribeRequest: TranscribeRequest,
   options?: RequestInit,
 ): Promise<TranscriptionResponse> => {
@@ -481,31 +481,31 @@ export const transcribeMedia = async (
     formData.append(`language`, transcribeRequest.language);
   }
 
-  return customFetch<TranscriptionResponse>(getTranscribeMediaUrl(), {
+  return customFetch<TranscriptionResponse>(getTranscribeAudioUrl(), {
     ...options,
     method: "POST",
     body: formData,
   });
 };
 
-export const getTranscribeMediaMutationOptions = <
+export const getTranscribeAudioMutationOptions = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof transcribeMedia>>,
+    Awaited<ReturnType<typeof transcribeAudio>>,
     TError,
     { data: BodyType<TranscribeRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof transcribeMedia>>,
+  Awaited<ReturnType<typeof transcribeAudio>>,
   TError,
   { data: BodyType<TranscribeRequest> },
   TContext
 > => {
-  const mutationKey = ["transcribeMedia"];
+  const mutationKey = ["transcribeAudio"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -515,44 +515,138 @@ export const getTranscribeMediaMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof transcribeMedia>>,
+    Awaited<ReturnType<typeof transcribeAudio>>,
     { data: BodyType<TranscribeRequest> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return transcribeMedia(data, requestOptions);
+    return transcribeAudio(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type TranscribeMediaMutationResult = NonNullable<
-  Awaited<ReturnType<typeof transcribeMedia>>
+export type TranscribeAudioMutationResult = NonNullable<
+  Awaited<ReturnType<typeof transcribeAudio>>
 >;
-export type TranscribeMediaMutationBody = BodyType<TranscribeRequest>;
-export type TranscribeMediaMutationError = ErrorType<ErrorResponse>;
+export type TranscribeAudioMutationBody = BodyType<TranscribeRequest>;
+export type TranscribeAudioMutationError = ErrorType<ErrorResponse>;
 
 /**
- * @summary Transcribe audio or video file to text
+ * @summary Transcribe audio file to text
  */
-export const useTranscribeMedia = <
+export const useTranscribeAudio = <
   TError = ErrorType<ErrorResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof transcribeMedia>>,
+    Awaited<ReturnType<typeof transcribeAudio>>,
     TError,
     { data: BodyType<TranscribeRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof transcribeMedia>>,
+  Awaited<ReturnType<typeof transcribeAudio>>,
   TError,
   { data: BodyType<TranscribeRequest> },
   TContext
 > => {
-  return useMutation(getTranscribeMediaMutationOptions(options));
+  return useMutation(getTranscribeAudioMutationOptions(options));
+};
+
+/**
+ * @summary Extract audio from video then transcribe to text
+ */
+export const getTranscribeVideoUrl = () => {
+  return `/api/transcriber/video`;
+};
+
+export const transcribeVideo = async (
+  transcribeRequest: TranscribeRequest,
+  options?: RequestInit,
+): Promise<TranscriptionResponse> => {
+  const formData = new FormData();
+  formData.append(`file`, transcribeRequest.file);
+  if (
+    transcribeRequest.language !== undefined &&
+    transcribeRequest.language !== null
+  ) {
+    formData.append(`language`, transcribeRequest.language);
+  }
+
+  return customFetch<TranscriptionResponse>(getTranscribeVideoUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getTranscribeVideoMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof transcribeVideo>>,
+    TError,
+    { data: BodyType<TranscribeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof transcribeVideo>>,
+  TError,
+  { data: BodyType<TranscribeRequest> },
+  TContext
+> => {
+  const mutationKey = ["transcribeVideo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof transcribeVideo>>,
+    { data: BodyType<TranscribeRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return transcribeVideo(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TranscribeVideoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof transcribeVideo>>
+>;
+export type TranscribeVideoMutationBody = BodyType<TranscribeRequest>;
+export type TranscribeVideoMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Extract audio from video then transcribe to text
+ */
+export const useTranscribeVideo = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof transcribeVideo>>,
+    TError,
+    { data: BodyType<TranscribeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof transcribeVideo>>,
+  TError,
+  { data: BodyType<TranscribeRequest> },
+  TContext
+> => {
+  return useMutation(getTranscribeVideoMutationOptions(options));
 };
 
 /**

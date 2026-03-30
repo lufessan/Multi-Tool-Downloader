@@ -57,7 +57,8 @@ async function transcribeFile(
       await fs.writeFile(audioPath, fileBuffer);
     }
 
-    const audioBuffer = await fs.readFile(audioPath);
+    const rawBuffer = await fs.readFile(audioPath);
+    const audioBuffer = new Uint8Array(rawBuffer);
     const audioFile = new File([audioBuffer], `audio${path.extname(audioPath) || ".mp3"}`, {
       type: "audio/mpeg",
     });

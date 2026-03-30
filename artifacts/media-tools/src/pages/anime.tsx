@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Tv, UploadCloud, Link as LinkIcon } from "lucide-react";
-import type { AnimeRecognitionResponse } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { AnimeRecognitionResponse, AnimeResult, SourceLink } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function Anime() {
@@ -83,7 +83,7 @@ export default function Anime() {
         <div className="space-y-6 animate-in slide-in-from-bottom-4 pt-4">
           <h3 className="text-2xl font-black border-r-4 border-primary pr-4">نتائج البحث ({result.method === 'image' ? 'بالصورة' : 'بالنص'})</h3>
           <div className="grid gap-6">
-            {result.results.map((anime, i) => (
+            {result.results.map((anime: AnimeResult, i: number) => (
               <Card key={i} className="overflow-hidden border-border/50 hover:border-primary/30 transition-colors">
                 <div className="flex flex-col md:flex-row">
                   {anime.thumbnail && (
@@ -102,7 +102,7 @@ export default function Anime() {
                       {anime.episode && (
                         <Badge variant="secondary" className="text-sm px-3 py-1">الحلقة: {anime.episode}</Badge>
                       )}
-                      {anime.genres?.map(g => (
+                      {anime.genres?.map((g: string) => (
                         <Badge key={g} variant="outline" className="text-sm px-3 py-1 bg-background">{g}</Badge>
                       ))}
                     </div>
@@ -111,7 +111,7 @@ export default function Anime() {
 
                     {anime.source_links && anime.source_links.length > 0 && (
                       <div className="flex gap-3 pt-2 flex-wrap">
-                        {anime.source_links.map((link, j) => (
+                        {anime.source_links.map((link: SourceLink, j: number) => (
                           <a key={j} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center text-sm bg-primary/10 text-primary px-4 py-2 rounded-lg font-bold hover:bg-primary/20 transition-colors">
                             <LinkIcon className="w-4 h-4 ml-2" />
                             {link.name}

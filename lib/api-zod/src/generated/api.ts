@@ -93,14 +93,28 @@ export const ClipVideoBody = zod.object({
 });
 
 /**
- * @summary Transcribe audio or video file to text
+ * @summary Transcribe audio file to text
  */
-export const TranscribeMediaBody = zod.object({
+export const TranscribeAudioBody = zod.object({
   file: zod.instanceof(File).describe("Audio or video file to transcribe"),
   language: zod.string().nullish().describe("Language hint (ar, en, etc.)"),
 });
 
-export const TranscribeMediaResponse = zod.object({
+export const TranscribeAudioResponse = zod.object({
+  text: zod.string(),
+  language: zod.string().nullish(),
+  duration: zod.number().nullish(),
+});
+
+/**
+ * @summary Extract audio from video then transcribe to text
+ */
+export const TranscribeVideoBody = zod.object({
+  file: zod.instanceof(File).describe("Audio or video file to transcribe"),
+  language: zod.string().nullish().describe("Language hint (ar, en, etc.)"),
+});
+
+export const TranscribeVideoResponse = zod.object({
   text: zod.string(),
   language: zod.string().nullish(),
   duration: zod.number().nullish(),

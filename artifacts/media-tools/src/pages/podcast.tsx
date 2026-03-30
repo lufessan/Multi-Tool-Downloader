@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Radio, UploadCloud, Link as LinkIcon, FileText } from "lucide-react";
-import type { PodcastRecognitionResponse } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { PodcastRecognitionResponse, PodcastResult, SourceLink } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 
 export default function Podcast() {
@@ -102,7 +102,7 @@ export default function Podcast() {
           {result.results.length > 0 && (
             <div className="grid gap-6">
               <h3 className="text-2xl font-black border-r-4 border-primary pr-4">نتائج البحث ({result.method === 'audio' ? 'بالصوت' : 'بالصورة'})</h3>
-              {result.results.map((podcast, i) => (
+              {result.results.map((podcast: PodcastResult, i: number) => (
                 <Card key={i} className="overflow-hidden border-border/50 hover:border-primary/30 transition-colors">
                   <div className="flex flex-col md:flex-row">
                     {podcast.image && (
@@ -115,7 +115,7 @@ export default function Podcast() {
                       </div>
                       
                       <div className="flex flex-wrap gap-2">
-                        {podcast.categories?.map(c => (
+                        {podcast.categories?.map((c: string) => (
                           <Badge key={c} variant="secondary" className="text-sm px-3 py-1">{c}</Badge>
                         ))}
                       </div>
@@ -124,7 +124,7 @@ export default function Podcast() {
 
                       {podcast.source_links && podcast.source_links.length > 0 && (
                         <div className="flex gap-3 pt-2 flex-wrap">
-                          {podcast.source_links.map((link, j) => (
+                          {podcast.source_links.map((link: SourceLink, j: number) => (
                             <a key={j} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center text-sm bg-primary/10 text-primary px-4 py-2 rounded-lg font-bold hover:bg-primary/20 transition-colors">
                               <LinkIcon className="w-4 h-4 ml-2" />
                               {link.name}

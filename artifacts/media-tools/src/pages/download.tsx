@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Download as DownloadIcon, Search } from "lucide-react";
-import type { VideoFormat } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { VideoFormat } from "@workspace/api-client-react";
 
 export default function Download() {
   const [url, setUrl] = useState("");

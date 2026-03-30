@@ -139,11 +139,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /transcriber/transcribe:
+  /transcriber/audio:
     post:
-      operationId: transcribeMedia
+      operationId: transcribeAudio
       tags: [transcriber]
-      summary: Transcribe audio or video file to text
+      summary: Transcribe audio file to text
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/TranscribeRequest"
+      responses:
+        "200":
+          description: Transcription result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptionResponse"
+        "400":
+          description: Invalid file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /transcriber/video:
+    post:
+      operationId: transcribeVideo
+      tags: [transcriber]
+      summary: Extract audio from video then transcribe to text
       requestBody:
         required: true
         content:
