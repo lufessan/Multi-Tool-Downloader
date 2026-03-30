@@ -185,19 +185,6 @@ router.post("/recognize", uploadFields, async (req, res) => {
       results = await searchItunesPodcasts(searchQuery);
     }
 
-    if (results.length === 0 && searchQuery) {
-      results = [
-        {
-          title: searchQuery,
-          description: null,
-          image: null,
-          author: null,
-          categories: null,
-          source_links: buildPodcastSourceLinks(searchQuery),
-        },
-      ];
-    }
-
     res.json({ results, method, transcription });
   } catch (err: unknown) {
     req.log.error({ err }, "Error recognizing podcast");

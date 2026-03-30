@@ -3,6 +3,7 @@ import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
+import { validatePublicUrl } from "../../lib/url-validation";
 
 const router: IRouter = Router();
 
@@ -70,6 +71,12 @@ router.post("/info", async (req, res) => {
     return;
   }
 
+  const urlCheck = validatePublicUrl(url);
+  if (!urlCheck.valid) {
+    res.status(400).json({ error: urlCheck.error || "رابط غير صالح" });
+    return;
+  }
+
   try {
     const output = await runYtDlp([
       "--dump-json",
@@ -131,6 +138,12 @@ router.post("/clip", async (req, res) => {
 
   if (!url || !start_time || !end_time) {
     res.status(400).json({ error: "الرابط ووقت البداية والنهاية مطلوبة" });
+    return;
+  }
+
+  const urlCheck = validatePublicUrl(url);
+  if (!urlCheck.valid) {
+    res.status(400).json({ error: urlCheck.error || "رابط غير صالح" });
     return;
   }
 
