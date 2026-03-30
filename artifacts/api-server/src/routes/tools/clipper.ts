@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 import { validatePublicUrlWithDns } from "../../lib/url-validation";
+import { runYtDlp } from "../../lib/ytdlp";
 
 const router: IRouter = Router();
 
@@ -26,21 +27,6 @@ interface YtDlpInfo {
   duration?: number;
   uploader?: string;
   formats?: YtDlpFormat[];
-}
-
-function runYtDlp(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("yt-dlp", args);
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => (stdout += d));
-    proc.stderr.on("data", (d: Buffer) => (stderr += d));
-    proc.on("close", (code: number | null) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
-    });
-    proc.on("error", reject);
-  });
 }
 
 function runFfmpeg(args: string[]): Promise<void> {

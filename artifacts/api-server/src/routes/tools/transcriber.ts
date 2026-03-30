@@ -7,6 +7,7 @@ import os from "os";
 import { toFile } from "groq-sdk";
 import { groq, TRANSCRIPTION_MODEL, isGroqAvailable } from "../../lib/groq-client";
 import { validatePublicUrlWithDns } from "../../lib/url-validation";
+import { runYtDlp } from "../../lib/ytdlp";
 
 const router: IRouter = Router();
 
@@ -33,20 +34,6 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
-function runYtDlp(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("yt-dlp", args);
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => (stdout += d));
-    proc.stderr.on("data", (d: Buffer) => (stderr += d));
-    proc.on("close", (code: number | null) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
-    });
-    proc.on("error", reject);
-  });
-}
 
 function toCompactMp3(inputPath: string, outputPath: string): Promise<void> {
   return runFfmpeg([

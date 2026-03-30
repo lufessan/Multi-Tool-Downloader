@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
-import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
 import { validatePublicUrlWithDns } from "../../lib/url-validation";
+import { runYtDlp } from "../../lib/ytdlp";
 
 const router: IRouter = Router();
 
@@ -35,21 +35,6 @@ interface NormalizedFormat {
   vcodec: string | null;
   acodec: string | null;
   note: string | null;
-}
-
-function runYtDlp(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("yt-dlp", args);
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => (stdout += d));
-    proc.stderr.on("data", (d: Buffer) => (stderr += d));
-    proc.on("close", (code: number | null) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
-    });
-    proc.on("error", reject);
-  });
 }
 
 // Get video info and available formats
