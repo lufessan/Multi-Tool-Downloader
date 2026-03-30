@@ -129,7 +129,10 @@ async function searchAniListByText(query: string): Promise<AnimeResult[]> {
   });
 }
 
-async function recognizeWithGroq(imageBuffer: Buffer, mimeType: string): Promise<{ title: string; character: string | null }> {
+async function recognizeWithGroq(
+  imageBuffer: Buffer,
+  mimeType: string
+): Promise<{ title: string | null; character: string | null }> {
   const base64 = imageBuffer.toString("base64");
   const res = await groq.chat.completions.create({
     model: VISION_MODEL,
@@ -138,7 +141,10 @@ async function recognizeWithGroq(imageBuffer: Buffer, mimeType: string): Promise
       role: "user",
       content: [
         { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
-        { type: "text", text: `What anime is this image from? Reply ONLY in valid JSON: {"anime_title":"title in English or romaji","character":"name or null"}` },
+        {
+          type: "text",
+          text: `Look carefully at this image. If you can clearly identify an anime series from it, respond ONLY with valid JSON: {"anime_title":"exact official title in English or romaji","character":"character name or null"}\nIf this is NOT an anime screenshot, or you are not confident, respond with: {"anime_title":null,"character":null}\nDo NOT guess. Only respond with a title if you are certain.`,
+        },
       ],
     }],
   });
@@ -146,15 +152,18 @@ async function recognizeWithGroq(imageBuffer: Buffer, mimeType: string): Promise
   try {
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
-      const parsed = JSON.parse(match[0]) as { anime_title?: string; character?: string | null };
-      return { title: parsed.anime_title || "غير محدد", character: parsed.character || null };
+      const parsed = JSON.parse(match[0]) as { anime_title?: string | null; character?: string | null };
+      return {
+        title: parsed.anime_title || null,
+        character: parsed.character || null,
+      };
     }
   } catch { /* ignore */ }
-  return { title: "غير محدد", character: null };
+  return { title: null, character: null };
 }
 
 router.post("/recognize", upload.single("image"), async (req, res) => {
-  const description = (req.body as { description?: string }).description;
+  const description = (req.body as { description?: string }).description?.trim();
   const imageFile = req.file;
 
   if (!imageFile && !description) {
@@ -163,63 +172,112 @@ router.post("/recognize", upload.single("image"), async (req, res) => {
   }
 
   try {
-    if (imageFile) {
-      const formData = new FormData();
-      const blob = new Blob([new Uint8Array(imageFile.buffer)], { type: imageFile.mimetype });
-      formData.append("image", blob, imageFile.originalname || "image.jpg");
+    // ── Text description only ──────────────────────────────────────────────
+    if (!imageFile && description) {
+      const results = await searchAniListByText(description);
+      res.json({ results, method: "text" });
+      return;
+    }
 
-      const traceMoeRes = await fetch("https://api.trace.moe/search?anilistInfo", {
-        method: "POST", body: formData,
-      });
+    if (!imageFile) { res.json({ results: [], method: "image" }); return; }
 
-      if (!traceMoeRes.ok) throw new Error(`trace.moe error: ${traceMoeRes.status}`);
+    // ── Image: try trace.moe first ─────────────────────────────────────────
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(imageFile.buffer)], { type: imageFile.mimetype });
+    formData.append("image", blob, imageFile.originalname || "image.jpg");
 
-      const traceMoeData = await traceMoeRes.json() as TraceMoeResponse;
-      const allResults = traceMoeData.result || [];
-      const top = allResults[0];
-      const similarity = top?.similarity ?? 0;
+    const traceMoeRes = await fetch("https://api.trace.moe/search?anilistInfo", {
+      method: "POST", body: formData,
+    });
 
-      if (allResults.length === 0 || similarity < 0.5) {
-        if (!isGroqAvailable()) {
-          res.json({ results: [], method: "image" });
-          return;
-        }
-        const { title, character } = await recognizeWithGroq(imageFile.buffer, imageFile.mimetype);
-        const anilistResults = await searchAniListByText(title);
-        res.json({ results: anilistResults.map((r) => ({ ...r, character })), method: "image" });
-        return;
-      }
+    if (!traceMoeRes.ok) throw new Error(`trace.moe error: ${traceMoeRes.status}`);
 
+    const traceMoeData = await traceMoeRes.json() as TraceMoeResponse;
+    const allResults = traceMoeData.result || [];
+    const top = allResults[0];
+    const similarity = top?.similarity ?? 0;
+
+    // trace.moe matched with sufficient confidence (≥ 87%)
+    if (allResults.length > 0 && similarity >= 0.87) {
       const r = top;
       const anilistRaw = r.anilist;
       const anilistId: number | null =
         typeof anilistRaw === "number" ? anilistRaw
         : typeof anilistRaw === "object" && anilistRaw?.id !== undefined ? Number(anilistRaw.id) : null;
 
-      if (anilistId === null) { res.json({ results: [], method: "image" }); return; }
+      if (anilistId !== null) {
+        const anilistObj = typeof anilistRaw === "object" ? anilistRaw as TraceMoeAnilist : null;
+        const titleEn = anilistObj?.title?.english || anilistObj?.title?.romaji || String(anilistId);
+        const extra = await getAniListInfo(anilistId);
 
-      const anilistObj = typeof anilistRaw === "object" ? anilistRaw as TraceMoeAnilist : null;
-      const titleEn = anilistObj?.title?.english || anilistObj?.title?.romaji || String(anilistId);
-      const extra = await getAniListInfo(anilistId);
-
-      res.json({
-        results: [{
-          title: titleEn || "غير معروف", title_ar: null, title_en: titleEn,
-          character: null,
-          episode: r.episode != null ? Number(r.episode) : null,
-          similarity: r.similarity ? Math.round(r.similarity * 100) : null,
-          from: r.from ?? null, to: r.to ?? null,
-          thumbnail: r.image || null, anilist_id: anilistId,
-          mal_id: extra.mal_id || null, genres: extra.genres || null,
-          description: extra.description || null,
-          source_links: buildSourceLinks(titleEn, anilistId, extra.mal_id),
-        }],
-        method: "image",
-      });
-    } else if (description) {
-      const results = await searchAniListByText(description);
-      res.json({ results, method: "text" });
+        res.json({
+          results: [{
+            title: titleEn || "غير معروف", title_ar: null, title_en: titleEn,
+            character: null,
+            episode: r.episode != null ? Number(r.episode) : null,
+            similarity: Math.round(similarity * 100),
+            from: r.from ?? null, to: r.to ?? null,
+            thumbnail: r.image || null, anilist_id: anilistId,
+            mal_id: extra.mal_id || null, genres: extra.genres || null,
+            description: extra.description || null,
+            source_links: buildSourceLinks(titleEn, anilistId, extra.mal_id),
+          }],
+          method: "image",
+        });
+        return;
+      }
     }
+
+    // trace.moe gave low confidence or no result — try Groq vision
+    if (isGroqAvailable()) {
+      const { title: groqTitle, character } = await recognizeWithGroq(imageFile.buffer, imageFile.mimetype);
+
+      if (groqTitle) {
+        const anilistResults = await searchAniListByText(groqTitle);
+        if (anilistResults.length > 0) {
+          res.json({
+            results: anilistResults.map((r) => ({ ...r, character })),
+            method: "image",
+          });
+          return;
+        }
+      }
+    }
+
+    // If there was a medium-confidence trace.moe result (≥ 50%), still return it
+    if (allResults.length > 0 && similarity >= 0.50) {
+      const r = top;
+      const anilistRaw = r.anilist;
+      const anilistId: number | null =
+        typeof anilistRaw === "number" ? anilistRaw
+        : typeof anilistRaw === "object" && anilistRaw?.id !== undefined ? Number(anilistRaw.id) : null;
+
+      if (anilistId !== null) {
+        const anilistObj = typeof anilistRaw === "object" ? anilistRaw as TraceMoeAnilist : null;
+        const titleEn = anilistObj?.title?.english || anilistObj?.title?.romaji || String(anilistId);
+        const extra = await getAniListInfo(anilistId);
+
+        res.json({
+          results: [{
+            title: titleEn || "غير معروف", title_ar: null, title_en: titleEn,
+            character: null,
+            episode: r.episode != null ? Number(r.episode) : null,
+            similarity: Math.round(similarity * 100),
+            from: r.from ?? null, to: r.to ?? null,
+            thumbnail: r.image || null, anilist_id: anilistId,
+            mal_id: extra.mal_id || null, genres: extra.genres || null,
+            description: extra.description || null,
+            source_links: buildSourceLinks(titleEn, anilistId, extra.mal_id),
+          }],
+          method: "image",
+        });
+        return;
+      }
+    }
+
+    // Nothing found
+    res.json({ results: [], method: "image" });
+
   } catch (err: unknown) {
     req.log.error({ err }, "Error recognizing anime");
     res.status(400).json({ error: "فشل التعرف على الأنمي. حاول مرة أخرى." });

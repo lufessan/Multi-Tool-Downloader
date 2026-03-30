@@ -6,6 +6,7 @@ import fs from "fs/promises";
 import os from "os";
 import { toFile } from "groq-sdk";
 import { groq, TRANSCRIPTION_MODEL, isGroqAvailable } from "../../lib/groq-client";
+import { validatePublicUrlWithDns } from "../../lib/url-validation";
 
 const router: IRouter = Router();
 
@@ -27,6 +28,21 @@ function runFfmpeg(args: string[]): Promise<void> {
     proc.on("close", (code: number | null) => {
       if (code === 0) resolve();
       else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
+    });
+    proc.on("error", reject);
+  });
+}
+
+function runYtDlp(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("yt-dlp", args);
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d: Buffer) => (stdout += d));
+    proc.stderr.on("data", (d: Buffer) => (stderr += d));
+    proc.on("close", (code: number | null) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
     });
     proc.on("error", reject);
   });
@@ -73,6 +89,7 @@ async function transcribeFile(
 ): Promise<string> {
   const ext = path.extname(originalName).toLowerCase();
   const isVideo = VIDEO_EXTS.has(ext);
+  void isVideo;
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "transcribe-"));
 
   try {
@@ -106,6 +123,23 @@ async function transcribeFile(
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+// Download audio from any URL using yt-dlp, returns path to audio file in tmpDir
+async function downloadAudioFromUrl(url: string, tmpDir: string): Promise<string> {
+  await runYtDlp([
+    "--no-playlist", "--no-warnings",
+    "--downloader", "native",
+    "-f", "bestaudio/best",
+    "-o", path.join(tmpDir, "downloaded.%(ext)s"),
+    url,
+  ]);
+  const files = await fs.readdir(tmpDir);
+  const found = files.find((f) => f.startsWith("downloaded."));
+  if (!found) throw new Error("فشل تنزيل الملف من الرابط");
+  return path.join(tmpDir, found);
+}
+
+// ── File upload routes ────────────────────────────────────────────────────────
 
 router.post("/audio", upload.single("file"), async (req, res) => {
   if (!req.file) {
@@ -147,6 +181,47 @@ router.post("/video", upload.single("file"), async (req, res) => {
     req.log.error({ err }, "Error transcribing video");
     res.status(400).json({ error: "فشل تحويل الفيديو إلى نص. تأكد من صحة الملف." });
   }
+});
+
+// ── URL-based routes ──────────────────────────────────────────────────────────
+
+router.post("/from-url", async (req, res) => {
+  const { url, language } = req.body as { url?: string; language?: string };
+
+  if (!url) {
+    res.status(400).json({ error: "يرجى إدخال رابط الفيديو أو الصوت" });
+    return;
+  }
+
+  const urlCheck = await validatePublicUrlWithDns(url);
+  if (!urlCheck.valid) {
+    res.status(400).json({ error: urlCheck.error || "رابط غير صالح" });
+    return;
+  }
+
+  if (!isGroqAvailable()) {
+    res.status(503).json({ error: "خدمة التفريغ غير مفعّلة. يرجى إضافة GROQ_API_KEY." });
+    return;
+  }
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "transcribe-url-"));
+  try {
+    const audioPath = await downloadAudioFromUrl(url, tmpDir);
+    const audioBuffer = await fs.readFile(audioPath);
+    const text = await transcribeFile(audioBuffer, path.basename(audioPath), language || undefined);
+    res.json({ text, language: language || null, duration: null });
+  } catch (err: unknown) {
+    req.log.error({ err }, "Error transcribing from URL");
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("فشل تنزيل")) {
+      res.status(400).json({ error: "تعذر تنزيل الملف. تأكد أن الرابط صحيح وأن الموقع مدعوم." });
+    } else {
+      res.status(400).json({ error: "فشل تفريغ الصوت من الرابط. حاول مرة أخرى." });
+    }
+    fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    return;
+  }
+  fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
 });
 
 export default router;
