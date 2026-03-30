@@ -446,6 +446,9 @@ components:
         title_en:
           type: string
           nullable: true
+        character:
+          type: string
+          nullable: true
         episode:
           type: number
           nullable: true

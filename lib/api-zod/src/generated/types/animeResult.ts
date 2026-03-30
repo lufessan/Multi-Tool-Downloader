@@ -11,6 +11,7 @@ export interface AnimeResult {
   title: string;
   title_ar?: string | null;
   title_en?: string | null;
+  character?: string | null;
   episode?: number | null;
   similarity?: number | null;
   from?: number | null;

@@ -19,6 +19,7 @@ interface AnimeResult {
   title: string;
   title_ar: string | null;
   title_en: string | null;
+  character: string | null;
   episode: number | null;
   similarity: number | null;
   from: number | null;
@@ -85,6 +86,7 @@ interface TraceMoeResponse {
 
 interface OpenAIAnimeJson {
   anime_title?: string;
+  character?: string | null;
 }
 
 function buildSourceLinks(title: string, anilistId?: number, malId?: number): SourceLink[] {
@@ -163,6 +165,7 @@ async function searchAniListByText(query: string): Promise<AnimeResult[]> {
       title,
       title_ar: null,
       title_en: m.title?.english || m.title?.romaji || null,
+      character: null,
       episode: null,
       similarity: null,
       from: null,
@@ -234,16 +237,19 @@ router.post(
 
           const content = completion.choices[0]?.message?.content || "";
           let parsedTitle = "غير محدد";
+          let parsedCharacter: string | null = null;
           try {
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               const parsed = JSON.parse(jsonMatch[0]) as OpenAIAnimeJson;
               parsedTitle = parsed.anime_title || "غير محدد";
+              parsedCharacter = parsed.character || null;
             }
           } catch { /* ignore parse errors */ }
 
           const anilistResults = await searchAniListByText(parsedTitle);
-          res.json({ results: anilistResults, method: "image" });
+          const withCharacter = anilistResults.map((r) => ({ ...r, character: parsedCharacter }));
+          res.json({ results: withCharacter, method: "image" });
           return;
         }
 
@@ -279,6 +285,7 @@ router.post(
             title: titleEn || titleRomaji || "غير معروف",
             title_ar: null,
             title_en: titleEn,
+            character: null,
             episode: r.episode !== undefined && r.episode !== null ? Number(r.episode) : null,
             similarity: r.similarity ? Math.round(r.similarity * 100) : null,
             from: r.from ?? null,

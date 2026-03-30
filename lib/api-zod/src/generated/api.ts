@@ -144,6 +144,7 @@ export const RecognizeAnimeResponse = zod.object({
       title: zod.string(),
       title_ar: zod.string().nullish(),
       title_en: zod.string().nullish(),
+      character: zod.string().nullish(),
       episode: zod.number().nullish(),
       similarity: zod.number().nullish(),
       from: zod.number().nullish(),

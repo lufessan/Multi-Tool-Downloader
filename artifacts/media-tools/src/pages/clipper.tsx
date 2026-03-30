@@ -73,8 +73,8 @@ export default function Clipper() {
     }
   };
 
-  const videoFormats = getInfo.data?.formats?.filter((f: VideoFormat) => f.resolution && f.resolution !== "audio only") ?? [];
-  const audioFormats = getInfo.data?.formats?.filter((f: VideoFormat) => f.resolution === "audio only") ?? [];
+  const videoFormats = getInfo.data?.formats?.filter((f: VideoFormat) => f.resolution && f.resolution !== "صوت فقط") ?? [];
+  const audioFormats = getInfo.data?.formats?.filter((f: VideoFormat) => f.resolution === "صوت فقط") ?? [];
   const showFormats = type === "video" ? videoFormats : audioFormats;
 
   return (

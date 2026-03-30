@@ -102,6 +102,9 @@ export default function Anime() {
                       {anime.episode && (
                         <Badge variant="secondary" className="text-sm px-3 py-1">الحلقة: {anime.episode}</Badge>
                       )}
+                      {anime.character && (
+                        <Badge variant="secondary" className="text-sm px-3 py-1">الشخصية: {anime.character}</Badge>
+                      )}
                       {anime.genres?.map((g: string) => (
                         <Badge key={g} variant="outline" className="text-sm px-3 py-1 bg-background">{g}</Badge>
                       ))}

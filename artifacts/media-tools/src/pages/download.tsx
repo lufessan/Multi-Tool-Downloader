@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Download as DownloadIcon, Search } from "lucide-react";
+import { Loader2, Download as DownloadIcon, Search, Video, Music } from "lucide-react";
 import type { VideoFormat } from "@workspace/api-client-react";
 
 export default function Download() {
@@ -12,6 +12,7 @@ export default function Download() {
   const { toast } = useToast();
   const getInfo = useGetVideoInfo();
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
+  const [downloadType, setDownloadType] = useState<"video" | "audio">("video");
 
   const handleGetInfo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,12 +88,34 @@ export default function Download() {
 
           <Card className="lg:col-span-2 border-border/50 bg-card/40">
             <CardContent className="p-6 space-y-6">
-              <div className="flex justify-between items-center bg-primary/10 border border-primary/20 p-5 rounded-xl">
-                <div>
-                  <h4 className="font-bold text-lg text-primary">تنزيل سريع (أفضل جودة)</h4>
-                  <p className="text-sm text-muted-foreground mt-1">تنزيل الفيديو بأفضل جودة متوفرة تلقائياً</p>
+              <div className="bg-primary/10 border border-primary/20 p-5 rounded-xl space-y-4">
+                <h4 className="font-bold text-lg text-primary">تنزيل سريع</h4>
+                <div className="flex gap-3 flex-wrap">
+                  <Button
+                    size="lg"
+                    variant={downloadType === "video" ? "default" : "outline"}
+                    onClick={() => setDownloadType("video")}
+                    className="font-bold flex-1"
+                  >
+                    <Video className="w-5 h-5 ml-2" />
+                    فيديو (أفضل جودة)
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant={downloadType === "audio" ? "default" : "outline"}
+                    onClick={() => setDownloadType("audio")}
+                    className="font-bold flex-1"
+                  >
+                    <Music className="w-5 h-5 ml-2" />
+                    صوت فقط (MP3)
+                  </Button>
                 </div>
-                <Button size="lg" onClick={() => handleDownload(null)} disabled={downloadingFormat !== null} className="font-bold">
+                <Button
+                  size="lg"
+                  className="w-full font-bold"
+                  onClick={() => handleDownload(null, downloadType === "audio" ? "mp3" : "mp4", downloadType)}
+                  disabled={downloadingFormat !== null}
+                >
                   {downloadingFormat === 'best' ? <Loader2 className="w-5 h-5 animate-spin ml-2" /> : <DownloadIcon className="w-5 h-5 ml-2" />}
                   تنزيل الآن
                 </Button>
