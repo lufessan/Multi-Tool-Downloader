@@ -7,12 +7,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div
-      className="min-h-[100dvh] text-foreground selection:bg-primary/30"
+      className="min-h-[100dvh] text-foreground selection:bg-primary/30 overflow-x-hidden"
       style={{
         backgroundImage: "url('/luffy-bg.png')",
         backgroundSize: "cover",
         backgroundPosition: "center top",
-        backgroundAttachment: "fixed",
       }}
     >
       {/* Overlay */}
