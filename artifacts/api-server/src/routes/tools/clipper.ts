@@ -158,9 +158,12 @@ router.post("/clip", async (req, res) => {
 
   try {
     const downloadedFile = path.join(tmpDir, "source.%(ext)s");
+    const sectionSpec = `*${start_time}-${end_time}`;
+
     const dlArgs: string[] = [
       "--no-playlist",
       "--no-warnings",
+      "--download-sections", sectionSpec,
       "-o", downloadedFile,
     ];
 
@@ -179,7 +182,6 @@ router.post("/clip", async (req, res) => {
     if (downloadedFiles.length === 0) throw new Error("فشل تنزيل الفيديو");
 
     const sourcePath = path.join(tmpDir, downloadedFiles[0]);
-    const duration = endSec - startSec;
     let outputPath: string;
     let contentType: string;
 
@@ -187,32 +189,26 @@ router.post("/clip", async (req, res) => {
       outputPath = path.join(tmpDir, "clip.mp3");
       contentType = "audio/mpeg";
       await runFfmpeg([
-        "-ss", String(startSec),
-        "-t", String(duration),
         "-i", sourcePath,
         "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-        "-y", outputPath
+        "-y", outputPath,
       ]);
     } else if (type === "audio") {
       outputPath = path.join(tmpDir, "clip.m4a");
       contentType = "audio/mp4";
       await runFfmpeg([
-        "-ss", String(startSec),
-        "-t", String(duration),
         "-i", sourcePath,
         "-vn", "-c:a", "aac", "-b:a", "192k",
-        "-y", outputPath
+        "-y", outputPath,
       ]);
     } else {
       outputPath = path.join(tmpDir, "clip.mp4");
       contentType = "video/mp4";
       await runFfmpeg([
-        "-ss", String(startSec),
-        "-t", String(duration),
         "-i", sourcePath,
         "-c", "copy",
         "-avoid_negative_ts", "make_zero",
-        "-y", outputPath
+        "-y", outputPath,
       ]);
     }
 
