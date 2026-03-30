@@ -7,9 +7,9 @@ const COOKIES_FILE = path.join(os.tmpdir(), "yt-cookies.txt");
 let cookiesReady = false;
 
 /**
- * Write YouTube cookies from env var to a temp file on first use.
- * Set YOUTUBE_COOKIES on Render to the raw content of a cookies.txt
- * (Netscape format, exported from your browser via a cookie export extension).
+ * Optional: if YOUTUBE_COOKIES env var is set (raw Netscape cookies.txt content),
+ * it will be used for authentication. This is a fallback for environments where
+ * --impersonate alone isn't sufficient.
  */
 function initCookies(): void {
   if (cookiesReady) return;
@@ -19,7 +19,7 @@ function initCookies(): void {
       fs.writeFileSync(COOKIES_FILE, raw.trim(), "utf-8");
       cookiesReady = true;
     } catch {
-      // ignore write errors; we'll fall back to no-cookies mode
+      // ignore
     }
   }
 }
@@ -28,8 +28,9 @@ function buildBaseArgs(): string[] {
   initCookies();
   const args: string[] = [
     "--no-check-certificates",
-    "--extractor-args",
-    "youtube:player_client=ios,android,mweb,tv_embedded,web",
+    // Impersonate Chrome's TLS fingerprint — bypasses YouTube bot detection
+    // without requiring cookies. Needs curl_cffi installed (see Dockerfile).
+    "--impersonate", "chrome",
   ];
   if (cookiesReady) {
     args.push("--cookies", COOKIES_FILE);
