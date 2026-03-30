@@ -1,0 +1,50 @@
+2026-03-30T22:37:22.210564775Z #16 0.845 transforming...
+2026-03-30T22:37:22.531431502Z #16 1.316 src/components/ui/tooltip.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+2026-03-30T22:37:23.059913919Z #16 1.845 src/components/ui/select.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+2026-03-30T22:37:24.869628815Z #16 3.654 ✓ 1829 modules transformed.
+2026-03-30T22:37:25.108776861Z #16 3.893 rendering chunks...
+2026-03-30T22:37:25.21830994Z #16 3.901 computing gzip size...
+2026-03-30T22:37:25.218327991Z #16 3.913 dist/public/index.html                   1.56 kB │ gzip:   0.70 kB
+2026-03-30T22:37:25.218332411Z #16 3.913 dist/public/assets/index-CjIICFnN.css   45.60 kB │ gzip:   8.23 kB
+2026-03-30T22:37:25.218336411Z #16 3.913 dist/public/assets/index-BO0sk-A0.js   412.32 kB │ gzip: 127.91 kB
+2026-03-30T22:37:25.218340451Z #16 3.913 ✓ built in 3.11s
+2026-03-30T22:37:25.218344401Z #16 DONE 4.0s
+2026-03-30T22:37:25.370124608Z 
+2026-03-30T22:37:25.370142169Z #17 [12/12] RUN pnpm --filter @workspace/api-server run build
+2026-03-30T22:37:25.678620421Z #17 0.459 
+2026-03-30T22:37:25.678644922Z #17 0.459 > @workspace/api-server@0.0.0 build /app/artifacts/api-server
+2026-03-30T22:37:25.678649822Z #17 0.459 > node ./build.mjs
+2026-03-30T22:37:25.678653172Z #17 0.459 
+2026-03-30T22:37:26.020355325Z #17 0.801 
+2026-03-30T22:37:26.020375075Z #17 0.801   dist/index.mjs                       2.0mb ⚠️
+2026-03-30T22:37:26.020380275Z #17 0.801   dist/pino-worker.mjs               153.4kb
+2026-03-30T22:37:26.020384895Z #17 0.801   dist/pino-file.mjs                 142.0kb
+2026-03-30T22:37:26.020415766Z #17 0.801   dist/pino-pretty.mjs               114.6kb
+2026-03-30T22:37:26.020422607Z #17 0.801   dist/thread-stream-worker.mjs        7.3kb
+2026-03-30T22:37:26.020425676Z #17 0.801   dist/index.mjs.map                   3.2mb
+2026-03-30T22:37:26.020428756Z #17 0.801   dist/pino-worker.mjs.map           256.9kb
+2026-03-30T22:37:26.020431787Z #17 0.801   dist/pino-file.mjs.map             229.0kb
+2026-03-30T22:37:26.020434797Z #17 0.801   dist/pino-pretty.mjs.map           203.9kb
+2026-03-30T22:37:26.020437897Z #17 0.801   dist/thread-stream-worker.mjs.map   12.0kb
+2026-03-30T22:37:26.020440937Z #17 0.801 
+2026-03-30T22:37:26.020444957Z #17 0.801 ⚡ Done in 280ms
+2026-03-30T22:37:26.122019609Z #17 DONE 0.9s
+2026-03-30T22:37:26.275626853Z 
+2026-03-30T22:37:26.275645574Z #18 exporting to docker image format
+2026-03-30T22:37:26.275650094Z #18 exporting layers
+2026-03-30T22:38:02.854800479Z #18 exporting layers 36.7s done
+2026-03-30T22:38:03.036076058Z #18 exporting manifest sha256:f39bbcc53c4304ce3133efd6cb22d2d734169607fe1c6cb6f34bca7f3d641ed1 0.0s done
+2026-03-30T22:38:03.036100549Z #18 exporting config sha256:1454eeeca404c887ceff4268898c8a750574a9117337da88adeb6fce1259be24 0.0s done
+2026-03-30T22:38:06.622015049Z #18 DONE 40.5s
+2026-03-30T22:38:06.772576353Z 
+2026-03-30T22:38:06.772597424Z #19 exporting cache to client directory
+2026-03-30T22:38:06.772602304Z #19 preparing build cache for export
+2026-03-30T22:38:19.218242Z #19 writing cache image manifest sha256:14e4fbc99cd023f083a576dd53f68efb759e0e40e94826a3c66620442fe35177
+2026-03-30T22:38:19.369611954Z #19 writing cache image manifest sha256:14e4fbc99cd023f083a576dd53f68efb759e0e40e94826a3c66620442fe35177 0.2s done
+2026-03-30T22:38:19.369633225Z #19 DONE 12.7s
+2026-03-30T22:38:20.305979209Z Pushing image to registry...
+2026-03-30T22:38:38.99186793Z Upload succeeded
+2026-03-30T22:38:46.226964911Z ==> Deploying...
+2026-03-30T22:38:46.349131676Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+2026-03-30T22:39:30.220751441Z ==> Exited with status 1
+2026-03-30T22:39:30.223741493Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
