@@ -1,0 +1,50 @@
+2026-03-30T22:39:30.220751441Z ==> Exited with status 1
+2026-03-30T22:39:30.223741493Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+2026-03-30T22:39:32.045572089Z 
+2026-03-30T22:39:32.045574379Z Node.js v20.20.2
+2026-03-30T22:39:44.792332028Z /app/node_modules/.pnpm/path-to-regexp@8.3.0/node_modules/path-to-regexp/src/index.ts:225
+2026-03-30T22:39:44.792385319Z       throw new PathError(`Missing parameter name at index ${index}`, str);
+2026-03-30T22:39:44.792388589Z             ^
+2026-03-30T22:39:44.792390689Z 
+2026-03-30T22:39:44.792392469Z 
+2026-03-30T22:39:44.792395089Z PathError [TypeError]: Missing parameter name at index 1: *; visit https://git.new/pathToRegexpError for info
+2026-03-30T22:39:44.79241937Z     at name (/app/node_modules/.pnpm/path-to-regexp@8.3.0/node_modules/path-to-regexp/src/index.ts:225:13)
+2026-03-30T22:39:44.79242141Z     at parse (/app/node_modules/.pnpm/path-to-regexp@8.3.0/node_modules/path-to-regexp/src/index.ts:242:62)
+2026-03-30T22:39:44.792424Z     at pathToRegexp (/app/node_modules/.pnpm/path-to-regexp@8.3.0/node_modules/path-to-regexp/src/index.ts:480:54)
+2026-03-30T22:39:44.7924263Z     at Object.match (/app/node_modules/.pnpm/path-to-regexp@8.3.0/node_modules/path-to-regexp/src/index.ts:438:28)
+2026-03-30T22:39:44.79242852Z     at matcher (/app/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:86:23)
+2026-03-30T22:39:44.79243063Z     at new Layer (/app/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:93:62)
+2026-03-30T22:39:44.79243261Z     at Function.route (/app/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:428:17)
+2026-03-30T22:39:44.79243467Z     at Function.route (/app/node_modules/.pnpm/express@5.2.1/node_modules/express/lib/application.js:257:22)
+2026-03-30T22:39:44.79243669Z     at Function.app2.<computed> (/app/node_modules/.pnpm/express@5.2.1/node_modules/express/lib/application.js:478:22)
+2026-03-30T22:39:44.79243871Z     at <anonymous> (/app/artifacts/api-server/src/app.ts:43:7) {
+2026-03-30T22:39:44.792440941Z   originalPath: '*'
+2026-03-30T22:39:44.792443031Z }
+2026-03-30T22:39:44.792444871Z 
+2026-03-30T22:39:44.792446791Z Node.js v20.20.2
+2026-03-30T22:47:19.707936831Z ==> Deploying...
+2026-03-30T22:47:19.881324787Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+2026-03-30T22:48:07.185324457Z {"level":30,"time":1774910887184,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","port":10000,"msg":"Server listening"}
+2026-03-30T22:48:07.305238147Z {"level":30,"time":1774910887304,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":1,"method":"HEAD","url":"/"},"res":{"statusCode":200},"responseTime":6,"msg":"request completed"}
+2026-03-30T22:48:10.869671169Z ==> Your service is live 🎉
+2026-03-30T22:48:11.019860768Z ==> 
+2026-03-30T22:48:11.022655355Z ==> ///////////////////////////////////////////////////////////
+2026-03-30T22:48:11.025075382Z ==> 
+2026-03-30T22:48:11.027528972Z ==> Available at your primary URL https://multi-tool-downloader.onrender.com
+2026-03-30T22:48:11.030110021Z ==> 
+2026-03-30T22:48:11.03280603Z ==> ///////////////////////////////////////////////////////////
+2026-03-30T22:48:11.13320338Z {"level":30,"time":1774910891133,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":2,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+2026-03-30T22:48:15.576930941Z {"level":30,"time":1774910895576,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":3,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+2026-03-30T22:48:15.898577426Z {"level":30,"time":1774910895898,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":4,"method":"GET","url":"/assets/index-BO0sk-A0.js"},"res":{"statusCode":200},"responseTime":3,"msg":"request completed"}
+2026-03-30T22:48:15.936972257Z {"level":30,"time":1774910895936,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":5,"method":"GET","url":"/assets/index-CjIICFnN.css"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+2026-03-30T22:48:16.59039527Z {"level":30,"time":1774910896590,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":6,"method":"GET","url":"/manifest.json"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+2026-03-30T22:48:16.788456964Z {"level":30,"time":1774910896788,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":7,"method":"GET","url":"/sw.js"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+2026-03-30T22:48:16.802796373Z {"level":30,"time":1774910896802,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":8,"method":"GET","url":"/luffy-bg.png"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+2026-03-30T22:48:17.018513939Z {"level":30,"time":1774910897018,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":10,"method":"GET","url":"/manifest.json"},"res":{"statusCode":304},"responseTime":2,"msg":"request completed"}
+2026-03-30T22:48:17.019498843Z {"level":30,"time":1774910897019,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":9,"method":"GET","url":"/icon-192.png"},"res":{"statusCode":200},"responseTime":4,"msg":"request completed"}
+2026-03-30T22:48:17.023456242Z {"level":30,"time":1774910897023,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":11,"method":"GET","url":"/"},"res":{"statusCode":200},"responseTime":1,"msg":"request completed"}
+2026-03-30T22:48:17.41235393Z {"level":30,"time":1774910897412,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":12,"method":"GET","url":"/icon-512.png"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+2026-03-30T22:48:17.599569683Z {"level":30,"time":1774910897599,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":13,"method":"GET","url":"/favicon-32.png"},"res":{"statusCode":200},"responseTime":2,"msg":"request completed"}
+2026-03-30T22:48:17.850274293Z {"level":30,"time":1774910897850,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":14,"method":"GET","url":"/icon-192.png"},"res":{"statusCode":304},"responseTime":1,"msg":"request completed"}
+2026-03-30T22:48:35.287300223Z {"level":50,"time":1774910915286,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":15,"method":"POST","url":"/api/clipper/info"},"err":{"type":"Error","message":"ERROR: [youtube] HFCZw5jbsiA: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies\n","stack":"Error: ERROR: [youtube] HFCZw5jbsiA: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies\n\n    at ChildProcess.<anonymous> (/app/artifacts/api-server/src/routes/tools/clipper.ts:40:19)\n    at ChildProcess.emit (node:events:524:28)\n    at maybeClose (node:internal/child_process:1104:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)"},"msg":"Error getting YouTube info"}
+2026-03-30T22:48:35.375883238Z {"level":30,"time":1774910915375,"pid":1,"hostname":"srv-d75fk46slomc73de4eng-hibernate-77d6c49fd9-nr6m8","req":{"id":15,"method":"POST","url":"/api/clipper/info"},"res":{"statusCode":400},"responseTime":4674,"msg":"request completed"}
