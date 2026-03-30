@@ -1,0 +1,50 @@
+2026-03-30T22:34:11.775627084Z #8 [ 3/12] RUN npm install -g pnpm@9
+2026-03-30T22:34:12.848590178Z #8 1.223 
+2026-03-30T22:34:12.848609409Z #8 1.223 added 1 package in 935ms
+2026-03-30T22:34:12.848614189Z #8 1.223 
+2026-03-30T22:34:12.848618349Z #8 1.223 1 package is looking for funding
+2026-03-30T22:34:12.949740214Z #8 1.223   run `npm fund` for details
+2026-03-30T22:34:12.949761776Z #8 1.225 npm notice
+2026-03-30T22:34:12.949769727Z #8 1.225 npm notice New major version of npm available! 10.8.2 -> 11.12.1
+2026-03-30T22:34:12.949776737Z #8 1.225 npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.1
+2026-03-30T22:34:12.949794098Z #8 1.225 npm notice To update run: npm install -g npm@11.12.1
+2026-03-30T22:34:12.949798129Z #8 1.225 npm notice
+2026-03-30T22:34:12.949801789Z #8 DONE 1.3s
+2026-03-30T22:34:12.949805439Z 
+2026-03-30T22:34:12.949809259Z #9 [ 4/12] WORKDIR /app
+2026-03-30T22:34:13.061607959Z #9 DONE 0.0s
+2026-03-30T22:34:13.061626631Z 
+2026-03-30T22:34:13.061634191Z #10 [ 5/12] COPY pnpm-workspace.yaml package.json pnpm-lock.yaml .npmrc ./
+2026-03-30T22:34:13.061672204Z #10 DONE 0.0s
+2026-03-30T22:34:13.061679305Z 
+2026-03-30T22:34:13.061684275Z #11 [ 6/12] COPY lib/ ./lib/
+2026-03-30T22:34:13.061688265Z #11 DONE 0.0s
+2026-03-30T22:34:13.291734007Z 
+2026-03-30T22:34:13.291757719Z #12 [ 7/12] COPY artifacts/api-server/package.json ./artifacts/api-server/
+2026-03-30T22:34:13.291761869Z #12 DONE 0.0s
+2026-03-30T22:34:13.291765509Z 
+2026-03-30T22:34:13.29176929Z #13 [ 8/12] COPY artifacts/media-tools/package.json ./artifacts/media-tools/
+2026-03-30T22:34:13.29177256Z #13 DONE 0.0s
+2026-03-30T22:34:13.29177559Z 
+2026-03-30T22:34:13.29177934Z #14 [ 9/12] RUN pnpm install --frozen-lockfile
+2026-03-30T22:34:13.643519091Z #14 0.502 Scope: all 10 workspace projects
+2026-03-30T22:34:13.773012498Z #14 0.592  ERR_PNPM_LOCKFILE_CONFIG_MISMATCH  Cannot proceed with the frozen installation. The current "overrides" configuration doesn't match the value found in the lockfile
+2026-03-30T22:34:13.7730345Z #14 0.592 
+2026-03-30T22:34:13.773040091Z #14 0.592 Update your lockfile using "pnpm install --no-frozen-lockfile"
+2026-03-30T22:34:13.773045111Z #14 ERROR: process "/bin/sh -c pnpm install --frozen-lockfile" did not complete successfully: exit code: 1
+2026-03-30T22:34:13.819663811Z ------
+2026-03-30T22:34:13.819684242Z  > [ 9/12] RUN pnpm install --frozen-lockfile:
+2026-03-30T22:34:13.819689943Z 0.502 Scope: all 10 workspace projects
+2026-03-30T22:34:13.819696083Z 0.592  ERR_PNPM_LOCKFILE_CONFIG_MISMATCH  Cannot proceed with the frozen installation. The current "overrides" configuration doesn't match the value found in the lockfile
+2026-03-30T22:34:13.819700023Z 0.592 
+2026-03-30T22:34:13.819704694Z 0.592 Update your lockfile using "pnpm install --no-frozen-lockfile"
+2026-03-30T22:34:13.819708644Z ------
+2026-03-30T22:34:13.82034918Z Dockerfile:32
+2026-03-30T22:34:13.820359451Z --------------------
+2026-03-30T22:34:13.820363921Z   30 |     
+2026-03-30T22:34:13.820369131Z   31 |     # Install all dependencies
+2026-03-30T22:34:13.820373102Z   32 | >>> RUN pnpm install --frozen-lockfile
+2026-03-30T22:34:13.820377042Z   33 |     
+2026-03-30T22:34:13.820380922Z   34 |     # Copy full source code
+2026-03-30T22:34:13.820384813Z --------------------
+2026-03-30T22:34:13.820389303Z error: failed to solve: process "/bin/sh -c pnpm install --frozen-lockfile" did not complete successfully: exit code: 1
