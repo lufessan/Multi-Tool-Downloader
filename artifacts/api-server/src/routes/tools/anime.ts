@@ -1,8 +1,5 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs/promises";
-import os from "os";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
@@ -32,6 +29,62 @@ interface AnimeResult {
   genres: string[] | null;
   description: string | null;
   source_links: SourceLink[];
+}
+
+interface AniListTitle {
+  romaji?: string;
+  english?: string;
+  native?: string;
+}
+
+interface AniListMedia {
+  id: number;
+  idMal?: number;
+  title: AniListTitle;
+  coverImage?: { large?: string };
+  genres?: string[];
+  description?: string;
+  episodes?: number;
+}
+
+interface AniListPageResponse {
+  data?: {
+    Page?: {
+      media?: AniListMedia[];
+    };
+  };
+}
+
+interface AniListSingleResponse {
+  data?: {
+    Media?: {
+      idMal?: number;
+      genres?: string[];
+      description?: string;
+    };
+  };
+}
+
+interface TraceMoeAnilist {
+  id?: number;
+  title?: AniListTitle;
+}
+
+interface TraceMoeResult {
+  anilist?: number | TraceMoeAnilist;
+  episode?: number | string;
+  similarity?: number;
+  from?: number;
+  to?: number;
+  image?: string;
+}
+
+interface TraceMoeResponse {
+  result?: TraceMoeResult[];
+}
+
+interface OpenAIAnimeJson {
+  anime_title?: string;
 }
 
 function buildSourceLinks(title: string, anilistId?: number, malId?: number): SourceLink[] {
@@ -68,7 +121,7 @@ async function getAniListInfo(anilistId: number): Promise<{ genres?: string[]; d
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ query, variables: { id: anilistId } }),
     });
-    const data = await response.json() as any;
+    const data = await response.json() as AniListSingleResponse;
     const media = data?.data?.Media;
     return {
       genres: media?.genres || [],
@@ -101,10 +154,10 @@ async function searchAniListByText(query: string): Promise<AnimeResult[]> {
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
     body: JSON.stringify({ query: gql, variables: { search: query } }),
   });
-  const data = await response.json() as any;
+  const data = await response.json() as AniListPageResponse;
   const medias = data?.data?.Page?.media || [];
 
-  return medias.map((m: any) => {
+  return medias.map((m) => {
     const title = m.title?.english || m.title?.romaji || m.title?.native || "غير معروف";
     return {
       title,
@@ -138,7 +191,6 @@ router.post(
 
     try {
       if (imageFile) {
-        // Use trace.moe for image recognition
         const formData = new FormData();
         const blob = new Blob([imageFile.buffer], { type: imageFile.mimetype });
         formData.append("image", blob, imageFile.originalname || "image.jpg");
@@ -152,17 +204,16 @@ router.post(
           throw new Error(`trace.moe error: ${traceMoeRes.status}`);
         }
 
-        const traceMoeData = await traceMoeRes.json() as any;
+        const traceMoeData = await traceMoeRes.json() as TraceMoeResponse;
         const traceResults = (traceMoeData.result || []).slice(0, 3);
 
         if (traceResults.length === 0) {
-          // Fallback: use OpenAI vision
           const base64 = imageFile.buffer.toString("base64");
           const mimeType = imageFile.mimetype;
 
           const completion = await openai.chat.completions.create({
-            model: "gpt-5.2",
-            max_completion_tokens: 1024,
+            model: "gpt-4o",
+            max_tokens: 1024,
             messages: [
               {
                 role: "user",
@@ -186,10 +237,10 @@ router.post(
           try {
             const jsonMatch = content.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]);
+              const parsed = JSON.parse(jsonMatch[0]) as OpenAIAnimeJson;
               parsedTitle = parsed.anime_title || "غير محدد";
             }
-          } catch {}
+          } catch { /* ignore parse errors */ }
 
           const anilistResults = await searchAniListByText(parsedTitle);
           res.json({ results: anilistResults, method: "image" });
@@ -200,51 +251,53 @@ router.post(
         const seen = new Set<number>();
 
         for (const r of traceResults) {
-          const anilistId = r.anilist?.id || r.anilist;
-          if (seen.has(anilistId)) continue;
+          const anilistRaw = r.anilist;
+          const anilistId: number | null =
+            typeof anilistRaw === "number"
+              ? anilistRaw
+              : typeof anilistRaw === "object" && anilistRaw !== null && anilistRaw.id !== undefined
+              ? Number(anilistRaw.id)
+              : null;
+
+          if (anilistId === null || seen.has(anilistId)) continue;
           seen.add(anilistId);
 
-          const titleEn =
-            r.anilist?.title?.english ||
-            r.anilist?.title?.romaji ||
-            String(anilistId);
-          const titleRomaji = r.anilist?.title?.romaji || null;
+          const anilistObj = typeof anilistRaw === "object" && anilistRaw !== null ? anilistRaw as TraceMoeAnilist : null;
+          const titleEn = anilistObj?.title?.english || anilistObj?.title?.romaji || String(anilistId);
+          const titleRomaji = anilistObj?.title?.romaji || null;
 
           let genres: string[] | null = null;
-          let description_text: string | null = null;
+          let descriptionText: string | null = null;
           let malId: number | null = null;
 
-          if (anilistId) {
-            const extra = await getAniListInfo(Number(anilistId));
-            genres = extra.genres || null;
-            description_text = extra.description || null;
-            malId = extra.mal_id || null;
-          }
+          const extra = await getAniListInfo(anilistId);
+          genres = extra.genres || null;
+          descriptionText = extra.description || null;
+          malId = extra.mal_id || null;
 
           results.push({
             title: titleEn || titleRomaji || "غير معروف",
             title_ar: null,
             title_en: titleEn,
-            episode: r.episode ? Number(r.episode) : null,
+            episode: r.episode !== undefined && r.episode !== null ? Number(r.episode) : null,
             similarity: r.similarity ? Math.round(r.similarity * 100) : null,
-            from: r.from || null,
-            to: r.to || null,
+            from: r.from ?? null,
+            to: r.to ?? null,
             thumbnail: r.image || null,
-            anilist_id: anilistId ? Number(anilistId) : null,
+            anilist_id: anilistId,
             mal_id: malId,
             genres,
-            description: description_text,
-            source_links: buildSourceLinks(titleEn, anilistId ? Number(anilistId) : undefined, malId || undefined),
+            description: descriptionText,
+            source_links: buildSourceLinks(titleEn, anilistId, malId ?? undefined),
           });
         }
 
         res.json({ results, method: "image" });
       } else if (description) {
-        // Text-based search via AniList
         const anilistResults = await searchAniListByText(description);
         res.json({ results: anilistResults, method: "text" });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       req.log.error({ err }, "Error recognizing anime");
       res.status(400).json({ error: "فشل التعرف على الأنمي. حاول مرة أخرى." });
     }

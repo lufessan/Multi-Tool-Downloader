@@ -6,14 +6,34 @@ import os from "os";
 
 const router: IRouter = Router();
 
+interface YtDlpFormat {
+  format_id: string;
+  ext: string;
+  resolution?: string;
+  height?: number;
+  filesize?: number;
+  filesize_approx?: number;
+  vcodec?: string;
+  acodec?: string;
+  format_note?: string;
+}
+
+interface YtDlpInfo {
+  title: string;
+  thumbnail?: string;
+  duration?: number;
+  uploader?: string;
+  formats?: YtDlpFormat[];
+}
+
 function runYtDlp(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn("yt-dlp", args);
     let stdout = "";
     let stderr = "";
-    proc.stdout.on("data", (d) => (stdout += d));
-    proc.stderr.on("data", (d) => (stderr += d));
-    proc.on("close", (code) => {
+    proc.stdout.on("data", (d: Buffer) => (stdout += d));
+    proc.stderr.on("data", (d: Buffer) => (stderr += d));
+    proc.on("close", (code: number | null) => {
       if (code === 0) resolve(stdout);
       else reject(new Error(stderr || `yt-dlp exited with code ${code}`));
     });
@@ -25,8 +45,8 @@ function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", args);
     let stderr = "";
-    proc.stderr.on("data", (d) => (stderr += d));
-    proc.on("close", (code) => {
+    proc.stderr.on("data", (d: Buffer) => (stderr += d));
+    proc.on("close", (code: number | null) => {
       if (code === 0) resolve();
       else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
     });
@@ -58,25 +78,25 @@ router.post("/info", async (req, res) => {
       url,
     ]);
 
-    const info = JSON.parse(output.trim());
+    const info = JSON.parse(output.trim()) as YtDlpInfo;
 
     const formats = (info.formats || [])
-      .filter((f: any) => f.vcodec !== "none" || f.acodec !== "none")
-      .map((f: any) => ({
+      .filter((f) => f.vcodec !== "none" || f.acodec !== "none")
+      .map((f) => ({
         format_id: f.format_id,
         ext: f.ext,
         resolution: f.resolution || (f.height ? `${f.height}p` : "صوت فقط"),
-        filesize: f.filesize || f.filesize_approx || null,
-        vcodec: f.vcodec !== "none" ? f.vcodec : null,
-        acodec: f.acodec !== "none" ? f.acodec : null,
-        note: f.format_note || null,
+        filesize: f.filesize ?? f.filesize_approx ?? null,
+        vcodec: f.vcodec && f.vcodec !== "none" ? f.vcodec : null,
+        acodec: f.acodec && f.acodec !== "none" ? f.acodec : null,
+        note: f.format_note ?? null,
       }))
       .filter(
-        (f: any, i: number, arr: any[]) =>
+        (f, i, arr) =>
           arr.findIndex((x) => x.resolution === f.resolution && x.ext === f.ext) === i
       );
 
-    formats.sort((a: any, b: any) => {
+    formats.sort((a, b) => {
       const aIsVideo = a.vcodec !== null;
       const bIsVideo = b.vcodec !== null;
       if (aIsVideo && !bIsVideo) return -1;
@@ -93,7 +113,7 @@ router.post("/info", async (req, res) => {
       uploader: info.uploader || null,
       formats,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     req.log.error({ err }, "Error getting YouTube info");
     res.status(400).json({ error: "تعذر الحصول على معلومات الفيديو." });
   }
@@ -125,7 +145,7 @@ router.post("/clip", async (req, res) => {
 
   try {
     const downloadedFile = path.join(tmpDir, "source.%(ext)s");
-    const dlArgs = [
+    const dlArgs: string[] = [
       "--no-playlist",
       "--no-warnings",
       "-o", downloadedFile,
@@ -191,7 +211,7 @@ router.post("/clip", async (req, res) => {
 
     const fileBuffer = await fs.readFile(outputPath);
     res.send(fileBuffer);
-  } catch (err: any) {
+  } catch (err: unknown) {
     req.log.error({ err }, "Error clipping video");
     if (!res.headersSent) {
       res.status(400).json({ error: "فشل قص الفيديو. تأكد من صحة البيانات." });

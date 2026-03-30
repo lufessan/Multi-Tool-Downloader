@@ -1,8 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import path from "path";
-import fs from "fs/promises";
-import os from "os";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router: IRouter = Router();
@@ -27,6 +25,25 @@ interface PodcastResult {
   source_links: SourceLink[];
 }
 
+interface ItunesPodcast {
+  trackName?: string;
+  collectionName?: string;
+  artistName?: string;
+  artworkUrl600?: string;
+  artworkUrl100?: string;
+  genres?: string[];
+  feedUrl?: string;
+}
+
+interface ItunesResponse {
+  results?: ItunesPodcast[];
+}
+
+interface PodcastTitleJson {
+  podcast_title?: string;
+  host?: string;
+}
+
 function buildPodcastSourceLinks(title: string, feedUrl?: string): SourceLink[] {
   const encoded = encodeURIComponent(title);
   const links: SourceLink[] = [
@@ -47,8 +64,8 @@ async function searchItunesPodcasts(query: string): Promise<PodcastResult[]> {
     const res = await fetch(
       `https://itunes.apple.com/search?term=${encoded}&entity=podcast&limit=5`
     );
-    const data = await res.json() as any;
-    return (data.results || []).map((p: any) => ({
+    const data = await res.json() as ItunesResponse;
+    return (data.results || []).map((p) => ({
       title: p.trackName || p.collectionName || "غير معروف",
       description: null,
       image: p.artworkUrl600 || p.artworkUrl100 || null,
@@ -90,8 +107,8 @@ router.post("/recognize", uploadFields, async (req, res) => {
       const mimeType = imageFile.mimetype;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        max_completion_tokens: 512,
+        model: "gpt-4o",
+        max_tokens: 512,
         messages: [
           {
             role: "user",
@@ -115,7 +132,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]) as PodcastTitleJson;
           searchQuery = parsed.podcast_title || "";
         }
       } catch {
@@ -137,10 +154,9 @@ router.post("/recognize", uploadFields, async (req, res) => {
 
       transcription = result.text;
 
-      // Use GPT to extract podcast info from transcription
       const completion = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        max_completion_tokens: 256,
+        model: "gpt-4o",
+        max_tokens: 256,
         messages: [
           {
             role: "user",
@@ -156,7 +172,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]) as PodcastTitleJson;
           searchQuery = parsed.podcast_title || transcription?.substring(0, 100) || "";
         }
       } catch {
@@ -183,7 +199,7 @@ router.post("/recognize", uploadFields, async (req, res) => {
     }
 
     res.json({ results, method, transcription });
-  } catch (err: any) {
+  } catch (err: unknown) {
     req.log.error({ err }, "Error recognizing podcast");
     res.status(400).json({ error: "فشل التعرف على البودكاست. حاول مرة أخرى." });
   }

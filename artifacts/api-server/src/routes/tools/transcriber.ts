@@ -13,6 +13,8 @@ const upload = multer({
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
 });
 
+const VIDEO_EXTS = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
+
 function extractAudioFromVideo(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn("ffmpeg", [
@@ -24,8 +26,8 @@ function extractAudioFromVideo(inputPath: string, outputPath: string): Promise<v
       "-y", outputPath,
     ]);
     let stderr = "";
-    proc.stderr.on("data", (d) => (stderr += d));
-    proc.on("close", (code) => {
+    proc.stderr.on("data", (d: Buffer) => (stderr += d));
+    proc.on("close", (code: number | null) => {
       if (code === 0) resolve();
       else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
     });
@@ -33,19 +35,13 @@ function extractAudioFromVideo(inputPath: string, outputPath: string): Promise<v
   });
 }
 
-router.post("/transcribe", upload.single("file"), async (req, res) => {
-  if (!req.file) {
-    res.status(400).json({ error: "يرجى رفع ملف صوتي أو فيديو" });
-    return;
-  }
-
-  const originalName = req.file.originalname || "upload";
+async function transcribeFile(
+  fileBuffer: Buffer,
+  originalName: string,
+  language: string | undefined
+): Promise<string> {
   const ext = path.extname(originalName).toLowerCase();
-  const language = (req.body as { language?: string }).language || undefined;
-
-  const videoExts = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"];
-  const isVideo = videoExts.includes(ext);
-
+  const isVideo = VIDEO_EXTS.has(ext);
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "transcribe-"));
 
   try {
@@ -53,16 +49,16 @@ router.post("/transcribe", upload.single("file"), async (req, res) => {
 
     if (isVideo) {
       const videoPath = path.join(tmpDir, `input${ext}`);
-      await fs.writeFile(videoPath, req.file.buffer);
+      await fs.writeFile(videoPath, fileBuffer);
       audioPath = path.join(tmpDir, "audio.mp3");
       await extractAudioFromVideo(videoPath, audioPath);
     } else {
       audioPath = path.join(tmpDir, `audio${ext || ".mp3"}`);
-      await fs.writeFile(audioPath, req.file.buffer);
+      await fs.writeFile(audioPath, fileBuffer);
     }
 
     const audioBuffer = await fs.readFile(audioPath);
-    const audioFile = new File([audioBuffer], `audio${ext || ".mp3"}`, {
+    const audioFile = new File([audioBuffer], `audio${path.extname(audioPath) || ".mp3"}`, {
       type: "audio/mpeg",
     });
 
@@ -73,16 +69,45 @@ router.post("/transcribe", upload.single("file"), async (req, res) => {
       ...(language ? { language } : {}),
     });
 
-    res.json({
-      text: transcription.text,
-      language: language || null,
-      duration: null,
-    });
-  } catch (err: any) {
-    req.log.error({ err }, "Error transcribing media");
-    res.status(400).json({ error: "فشل تحويل الصوت إلى نص. تأكد من صحة الملف." });
+    return transcription.text;
   } finally {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Transcribe audio files (MP3, WAV, M4A, OGG, etc.)
+router.post("/audio", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: "يرجى رفع ملف صوتي" });
+    return;
+  }
+
+  const language = (req.body as { language?: string }).language || undefined;
+
+  try {
+    const text = await transcribeFile(req.file.buffer, req.file.originalname || "audio.mp3", language);
+    res.json({ text, language: language || null, duration: null });
+  } catch (err: unknown) {
+    req.log.error({ err }, "Error transcribing audio");
+    res.status(400).json({ error: "فشل تحويل الصوت إلى نص. تأكد من صحة الملف." });
+  }
+});
+
+// Transcribe video files (MP4, MKV, AVI, etc.) — extracts audio first via ffmpeg
+router.post("/video", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: "يرجى رفع ملف فيديو" });
+    return;
+  }
+
+  const language = (req.body as { language?: string }).language || undefined;
+
+  try {
+    const text = await transcribeFile(req.file.buffer, req.file.originalname || "video.mp4", language);
+    res.json({ text, language: language || null, duration: null });
+  } catch (err: unknown) {
+    req.log.error({ err }, "Error transcribing video");
+    res.status(400).json({ error: "فشل تحويل الفيديو إلى نص. تأكد من صحة الملف." });
   }
 });
 

@@ -7,7 +7,8 @@ import { Layout } from "@/components/layout";
 import Home from "@/pages/home";
 import Download from "@/pages/download";
 import Clipper from "@/pages/clipper";
-import Transcribe from "@/pages/transcribe";
+import AudioToText from "@/pages/audio-to-text";
+import VideoToText from "@/pages/video-to-text";
 import ToMp3 from "@/pages/to-mp3";
 import Anime from "@/pages/anime";
 import Podcast from "@/pages/podcast";
@@ -21,7 +22,8 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/download" component={Download} />
         <Route path="/clipper" component={Clipper} />
-        <Route path="/transcribe" component={Transcribe} />
+        <Route path="/audio-to-text" component={AudioToText} />
+        <Route path="/video-to-text" component={VideoToText} />
         <Route path="/to-mp3" component={ToMp3} />
         <Route path="/anime" component={Anime} />
         <Route path="/podcast" component={Podcast} />

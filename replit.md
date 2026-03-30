@@ -1,6 +1,6 @@
 # أدوات الوسائط — Media Tools
 
-A comprehensive Arabic-only (RTL) media tools web application with 7 powerful tools.
+A comprehensive Arabic-only (RTL) media tools web application with 7 distinct tools.
 
 ## Architecture
 
@@ -14,33 +14,35 @@ A comprehensive Arabic-only (RTL) media tools web application with 7 powerful to
 ## Routing
 
 - Frontend: `/` — served by media-tools Vite dev server
-- API: `/api` — served by api-server Express app
+- API: `/api` — served by api-server Express app on port 8080
 
 ## The 7 Tools
 
 1. **تنزيل الوسائط** (`/download`) — Download video/audio from any URL using yt-dlp; shows available formats/qualities
 2. **قص المقاطع** (`/clipper`) — Cut YouTube clips by time range (HH:MM:SS) with quality/type selection (video/audio/mp3)
-3. **تفريغ النص** (`/transcribe`) — Transcribe audio or video files to text using OpenAI gpt-4o-mini-transcribe
-4. **تحويل لـ MP3** (`/to-mp3`) — Convert any video file to MP3 using ffmpeg
-5. **التعرف على الأنمي** (`/anime`) — Recognize anime from screenshot (trace.moe + AniList) or text description (AniList search) with links to free streaming sites
-6. **التعرف على البودكاست** (`/podcast`) — Identify podcasts from cover image (OpenAI vision) or audio clip (Whisper transcription) with iTunes search
+3. **صوت إلى نص** (`/audio-to-text`) — Transcribe audio files (MP3, WAV, M4A, OGG) to text using OpenAI gpt-4o-mini-transcribe
+4. **فيديو إلى نص** (`/video-to-text`) — Extract audio from video via ffmpeg, then transcribe to text using OpenAI Whisper
+5. **تحويل لـ MP3** (`/to-mp3`) — Convert any video file to MP3 using ffmpeg
+6. **التعرف على الأنمي** (`/anime`) — Recognize anime from screenshot (trace.moe + AniList) or text description (AniList search) with links to free streaming sites
+7. **التعرف على بودكاست** (`/podcast`) — Identify podcasts from cover image (OpenAI vision) or audio clip (Whisper transcription) with iTunes search
 
 ## Backend Routes
 
 - `POST /api/downloader/info` — Get video info and formats (yt-dlp)
 - `POST /api/downloader/download` — Download media file (yt-dlp, binary response)
 - `POST /api/clipper/clip` — Cut and download a clip (yt-dlp + ffmpeg, binary response)
-- `POST /api/transcriber/transcribe` — Transcribe audio/video (ffmpeg + OpenAI Whisper)
+- `POST /api/transcriber/audio` — Transcribe audio files (OpenAI Whisper)
+- `POST /api/transcriber/video` — Extract audio via ffmpeg, then transcribe (OpenAI Whisper)
 - `POST /api/converter/to-mp3` — Convert video to MP3 (ffmpeg, binary response)
-- `POST /api/anime/recognize` — Recognize anime from image or description
-- `POST /api/podcast/recognize` — Recognize podcast from image or audio
+- `POST /api/anime/recognize` — Recognize anime from image (trace.moe) or text (AniList search)
+- `POST /api/podcast/recognize` — Recognize podcast from image (OpenAI vision) or audio (Whisper + iTunes)
 
 ## Key Technologies
 
 - **yt-dlp** — Video/audio downloading and info fetching
-- **ffmpeg** — Audio extraction, video clipping, format conversion
+- **ffmpeg** — Audio extraction, video clipping, format conversion (installed as nix system dependency)
 - **OpenAI gpt-4o-mini-transcribe** — Audio-to-text transcription (via Replit AI integration)
-- **OpenAI gpt-5.2** — Vision AI for anime/podcast image recognition
+- **OpenAI gpt-4o** — Vision AI for anime/podcast image recognition
 - **trace.moe** — Anime scene recognition from screenshots
 - **AniList GraphQL API** — Anime metadata (genres, description, MAL ID)
 - **iTunes Search API** — Podcast search
@@ -51,11 +53,12 @@ A comprehensive Arabic-only (RTL) media tools web application with 7 powerful to
 - **Font**: Cairo (Google Fonts)
 - **Theme**: Dark mode only (deep blue/navy background, cyan primary accent)
 - **Router**: Wouter
-- **State**: React Query for API calls, raw fetch for binary downloads
+- **State**: React Query hooks for API queries; raw fetch+FormData for file uploads; raw fetch+Blob for binary downloads
 
 ## User Preferences
 
 - All UI is Arabic only — no English UI elements
 - RTL layout throughout
 - Binary downloads (video, audio, clip, mp3) use raw fetch + Blob + URL.createObjectURL
-- File uploads use raw fetch + FormData
+- File uploads use raw fetch + FormData (multipart)
+- Typed interfaces used in all backend routes — no `any` type escapes
