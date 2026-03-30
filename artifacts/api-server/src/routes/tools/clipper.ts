@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import os from "os";
 import { validatePublicUrlWithDns } from "../../lib/url-validation";
 import { runYtDlp } from "../../lib/ytdlp";
+import { getVideoInfoInvidious } from "../../lib/invidious";
 
 const router: IRouter = Router();
 
@@ -42,7 +43,6 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
-// Convert time string HH:MM:SS or MM:SS to seconds
 function timeToSeconds(time: string): number {
   const parts = time.split(":").map(Number);
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
@@ -50,14 +50,25 @@ function timeToSeconds(time: string): number {
   return parts[0] || 0;
 }
 
-// Find a file in directory by prefix
 async function findFile(dir: string, prefix: string): Promise<string | null> {
   const files = await fs.readdir(dir);
   const found = files.find((f) => f.startsWith(prefix + "."));
   return found ? path.join(dir, found) : null;
 }
 
-// Get YouTube video info
+function isYtDlpBotError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("Sign in to confirm") ||
+    msg.includes("bot") ||
+    msg.includes("cookies") ||
+    msg.includes("Login required") ||
+    msg.includes("HTTP Error 429") ||
+    msg.includes("HTTP Error 403")
+  );
+}
+
+// ── GET VIDEO INFO ─────────────────────────────────────────────────────────────
 router.post("/info", async (req, res) => {
   const { url } = req.body as { url?: string };
   if (!url) {
@@ -71,17 +82,14 @@ router.post("/info", async (req, res) => {
     return;
   }
 
+  // ── Try yt-dlp first ────────────────────────────────────────────────────────
   try {
     const output = await runYtDlp([
-      "--dump-json",
-      "--no-playlist",
-      "--no-warnings",
-      url,
+      "--dump-json", "--no-playlist", "--no-warnings", url,
     ]);
 
     const info = JSON.parse(output.trim()) as YtDlpInfo;
 
-    // Show all video-bearing formats (including HLS) — we handle them properly in /clip
     const formats = (info.formats || [])
       .filter((f) => f.vcodec && f.vcodec !== "none")
       .map((f) => ({
@@ -99,11 +107,7 @@ router.post("/info", async (req, res) => {
           arr.findIndex((x) => x.resolution === f.resolution && x.ext === f.ext) === i
       );
 
-    formats.sort((a, b) => {
-      const aH = parseInt(a.resolution) || 0;
-      const bH = parseInt(b.resolution) || 0;
-      return bH - aH;
-    });
+    formats.sort((a, b) => (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0));
 
     res.json({
       title: info.title,
@@ -111,16 +115,55 @@ router.post("/info", async (req, res) => {
       duration: info.duration || null,
       uploader: info.uploader || null,
       formats,
+      _source: "ytdlp",
     });
-  } catch (err: unknown) {
-    req.log.error({ err }, "Error getting YouTube info");
-    res.status(400).json({ error: "تعذر الحصول على معلومات الفيديو." });
+    return;
+  } catch (ytErr: unknown) {
+    req.log.warn({ err: ytErr }, "yt-dlp failed for /info, trying Invidious fallback");
+    if (!isYtDlpBotError(ytErr)) {
+      // Not a bot error — don't bother with Invidious
+      res.status(400).json({ error: "تعذر الحصول على معلومات الفيديو." });
+      return;
+    }
+  }
+
+  // ── Invidious fallback ──────────────────────────────────────────────────────
+  try {
+    const info = await getVideoInfoInvidious(url);
+
+    const formats = info.videoFormats
+      .map((f, i) => ({
+        format_id: `inv:${f.qualityLabel ?? i}`,
+        ext: f.container ?? "mp4",
+        resolution: f.qualityLabel ?? "فيديو",
+        filesize: null,
+        vcodec: f.encoding ?? null,
+        acodec: null,
+        note: null,
+        protocol: "https",
+      }))
+      .filter(
+        (f, i, arr) =>
+          arr.findIndex((x) => x.resolution === f.resolution) === i
+      );
+
+    formats.sort((a, b) => (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0));
+
+    res.json({
+      title: info.title,
+      thumbnail: info.thumbnail,
+      duration: info.duration || null,
+      uploader: info.uploader,
+      formats,
+      _source: "invidious",
+    });
+  } catch (invErr: unknown) {
+    req.log.error({ err: invErr }, "Invidious fallback also failed for /info");
+    res.status(400).json({ error: "تعذر الحصول على معلومات الفيديو. تأكد من صحة الرابط." });
   }
 });
 
-// Clip a section from a YouTube video
-// Strategy: download video-section and audio separately via yt-dlp native HLS downloader,
-// then combine locally with ffmpeg (avoids ffmpeg's broken HLS audio mux bug).
+// ── CLIP VIDEO ─────────────────────────────────────────────────────────────────
 router.post("/clip", async (req, res) => {
   const { url, start_time, end_time, format_id, type } = req.body as {
     url?: string;
@@ -148,80 +191,131 @@ router.post("/clip", async (req, res) => {
     return;
   }
   const duration = endSec - startSec;
-
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "clip-"));
 
+  const isInvidiousFormat = typeof format_id === "string" && format_id.startsWith("inv:");
+  let ytDlpError: unknown = null;
+
+  // ── Try yt-dlp (unless format is Invidious-sourced) ────────────────────────
+  if (!isInvidiousFormat) {
+    try {
+      await clipWithYtDlp({ url, start_time, end_time, format_id, type, startSec, endSec, duration, tmpDir, runFfmpeg, findFile });
+      const outputPath = await findClipOutput(tmpDir, type);
+      if (outputPath) {
+        streamClip(res, req, outputPath, tmpDir, start_time, end_time, type);
+        return;
+      }
+    } catch (err: unknown) {
+      ytDlpError = err;
+      req.log.warn({ err }, "yt-dlp clip failed, trying Invidious fallback");
+      if (!isYtDlpBotError(err)) {
+        req.log.error({ err }, "Non-bot yt-dlp error — not falling back to Invidious");
+        if (!res.headersSent) {
+          res.status(400).json({ error: "فشل قص الفيديو. تأكد من صحة البيانات." });
+        }
+        fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+        return;
+      }
+    }
+  }
+
+  // ── Invidious fallback ──────────────────────────────────────────────────────
   try {
-    const sectionSpec = `*${start_time}-${end_time}`;
+    const invInfo = await getVideoInfoInvidious(url);
+
+    // Pick quality: match format_id label or use best
+    const wantedQuality = typeof format_id === "string"
+      ? format_id.replace("inv:", "")
+      : null;
+
+    // Find matching video format
+    let chosenVideo = wantedQuality
+      ? invInfo.videoFormats.find((f) => f.qualityLabel === wantedQuality)
+      : null;
+    if (!chosenVideo) chosenVideo = invInfo.videoFormats[0] ?? null;
+
+    const audioUrl = invInfo.audioUrl;
 
     if (type === "audio" || type === "mp3") {
-      // ── Audio-only path ──────────────────────────────────────────────────
-      // Download full audio using native downloader (avoids ffmpeg HLS issues)
-      await runYtDlp([
-        "--no-playlist", "--no-warnings",
-        "--downloader", "native",
-        "-f", "bestaudio",
-        "-o", path.join(tmpDir, "audio.%(ext)s"),
-        url,
-      ]);
-
-      const audioSrc = await findFile(tmpDir, "audio");
-      if (!audioSrc) throw new Error("فشل تنزيل الصوت");
-
+      if (!audioUrl) throw new Error("لا يوجد صوت متاح من Invidious");
       const outputExt = type === "mp3" ? "mp3" : "m4a";
       const outputPath = path.join(tmpDir, `clip.${outputExt}`);
       const contentType = type === "mp3" ? "audio/mpeg" : "audio/mp4";
 
-      if (type === "mp3") {
-        await runFfmpeg([
-          "-ss", String(startSec), "-t", String(duration),
-          "-i", audioSrc,
-          "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
-          "-y", outputPath,
-        ]);
-      } else {
-        await runFfmpeg([
-          "-ss", String(startSec), "-t", String(duration),
-          "-i", audioSrc,
-          "-vn", "-c:a", "aac", "-b:a", "192k",
-          "-y", outputPath,
-        ]);
-      }
+      await runFfmpeg([
+        "-ss", String(startSec), "-t", String(duration),
+        "-i", audioUrl,
+        "-vn",
+        ...(type === "mp3"
+          ? ["-ar", "44100", "-ac", "2", "-b:a", "192k"]
+          : ["-c:a", "aac", "-b:a", "192k"]),
+        "-y", outputPath,
+      ]);
 
       const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}.${outputExt}`;
       res.setHeader("Content-Type", contentType);
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.sendFile(outputPath, (sendErr) => {
-        if (sendErr && !res.headersSent) {
-          req.log.error({ err: sendErr }, "Error streaming clip");
-          res.status(500).end();
-        }
+        if (sendErr && !res.headersSent) res.status(500).end();
         fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
       });
       return;
     }
 
-    // ── Video path ────────────────────────────────────────────────────────
-    // Two-step: download video section + full audio separately (native HLS downloader),
-    // then combine locally with ffmpeg.
+    // Video clip via Invidious stream URLs + ffmpeg
+    if (!chosenVideo) throw new Error("لا تتوفر تنسيقات فيديو من Invidious");
+    const outputPath = path.join(tmpDir, "clip.mp4");
 
-    // Pick video-only format
-    const videoFormat =
-      format_id && format_id !== "best"
-        ? `${format_id}/bestvideo[ext=mp4]/bestvideo`
-        : "bestvideo[ext=mp4]/bestvideo";
+    const ffArgs = audioUrl
+      ? [
+          "-ss", String(startSec), "-t", String(duration),
+          "-i", chosenVideo.url,
+          "-ss", String(startSec), "-t", String(duration),
+          "-i", audioUrl,
+          "-map", "0:v:0", "-map", "1:a:0",
+          "-c:v", "copy", "-c:a", "aac",
+          "-shortest", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart",
+          "-y", outputPath,
+        ]
+      : [
+          "-ss", String(startSec), "-t", String(duration),
+          "-i", chosenVideo.url,
+          "-c:v", "copy",
+          "-y", outputPath,
+        ];
 
-    // Step 1: video section (native handles HLS sections cleanly)
-    await runYtDlp([
-      "--no-playlist", "--no-warnings",
-      "--downloader", "native",
-      "--download-sections", sectionSpec,
-      "-f", videoFormat,
-      "-o", path.join(tmpDir, "video.%(ext)s"),
-      url,
-    ]);
+    await runFfmpeg(ffArgs);
 
-    // Step 2: full audio (native downloads full stream; we cut with ffmpeg locally)
+    const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}.mp4`;
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.sendFile(outputPath, (sendErr) => {
+      if (sendErr && !res.headersSent) res.status(500).end();
+      fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    });
+  } catch (invErr: unknown) {
+    req.log.error({ ytDlpError, invErr }, "Both yt-dlp and Invidious failed for /clip");
+    if (!res.headersSent) {
+      res.status(400).json({ error: "فشل قص الفيديو. تأكد من صحة البيانات والرابط." });
+    }
+    fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+async function clipWithYtDlp(opts: {
+  url: string; start_time: string; end_time: string;
+  format_id?: string | null; type?: string;
+  startSec: number; endSec: number; duration: number;
+  tmpDir: string;
+  runFfmpeg: (args: string[]) => Promise<void>;
+  findFile: (dir: string, prefix: string) => Promise<string | null>;
+}): Promise<void> {
+  const { url, start_time, end_time, format_id, type, startSec, duration, tmpDir, runFfmpeg, findFile } = opts;
+  const sectionSpec = `*${start_time}-${end_time}`;
+
+  if (type === "audio" || type === "mp3") {
     await runYtDlp([
       "--no-playlist", "--no-warnings",
       "--downloader", "native",
@@ -230,43 +324,96 @@ router.post("/clip", async (req, res) => {
       url,
     ]);
 
-    const videoSrc = await findFile(tmpDir, "video");
     const audioSrc = await findFile(tmpDir, "audio");
-    if (!videoSrc || !audioSrc) throw new Error("فشل تنزيل الفيديو أو الصوت");
+    if (!audioSrc) throw new Error("فشل تنزيل الصوت");
 
-    const outputPath = path.join(tmpDir, "clip.mp4");
+    const outputExt = type === "mp3" ? "mp3" : "m4a";
+    const outputPath = path.join(tmpDir, `clip.${outputExt}`);
 
-    // Step 3: combine locally — video is already trimmed, cut audio to match
-    await runFfmpeg([
-      "-i", videoSrc,
-      "-ss", String(startSec), "-t", String(duration), "-i", audioSrc,
-      "-map", "0:v:0",
-      "-map", "1:a:0",
-      "-c:v", "copy",
-      "-c:a", "aac",
-      "-shortest",
-      "-avoid_negative_ts", "make_zero",
-      "-movflags", "+faststart",
-      "-y", outputPath,
-    ]);
+    if (type === "mp3") {
+      await runFfmpeg([
+        "-ss", String(startSec), "-t", String(duration),
+        "-i", audioSrc,
+        "-vn", "-ar", "44100", "-ac", "2", "-b:a", "192k",
+        "-y", outputPath,
+      ]);
+    } else {
+      await runFfmpeg([
+        "-ss", String(startSec), "-t", String(duration),
+        "-i", audioSrc,
+        "-vn", "-c:a", "aac", "-b:a", "192k",
+        "-y", outputPath,
+      ]);
+    }
+    return;
+  }
 
-    const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}.mp4`;
-    res.setHeader("Content-Type", "video/mp4");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.sendFile(outputPath, (sendErr) => {
-      if (sendErr && !res.headersSent) {
-        req.log.error({ err: sendErr }, "Error streaming clip");
-        res.status(500).end();
-      }
-      fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-    });
-  } catch (err: unknown) {
-    req.log.error({ err }, "Error clipping video");
-    if (!res.headersSent) {
-      res.status(400).json({ error: "فشل قص الفيديو. تأكد من صحة البيانات." });
+  const videoFormat =
+    format_id && format_id !== "best"
+      ? `${format_id}/bestvideo[ext=mp4]/bestvideo`
+      : "bestvideo[ext=mp4]/bestvideo";
+
+  await runYtDlp([
+    "--no-playlist", "--no-warnings",
+    "--downloader", "native",
+    "--download-sections", sectionSpec,
+    "-f", videoFormat,
+    "-o", path.join(tmpDir, "video.%(ext)s"),
+    url,
+  ]);
+
+  await runYtDlp([
+    "--no-playlist", "--no-warnings",
+    "--downloader", "native",
+    "-f", "bestaudio",
+    "-o", path.join(tmpDir, "audio.%(ext)s"),
+    url,
+  ]);
+
+  const videoSrc = await findFile(tmpDir, "video");
+  const audioSrc = await findFile(tmpDir, "audio");
+  if (!videoSrc || !audioSrc) throw new Error("فشل تنزيل الفيديو أو الصوت");
+
+  const outputPath = path.join(tmpDir, "clip.mp4");
+  await runFfmpeg([
+    "-i", videoSrc,
+    "-ss", String(startSec), "-t", String(duration), "-i", audioSrc,
+    "-map", "0:v:0", "-map", "1:a:0",
+    "-c:v", "copy", "-c:a", "aac",
+    "-shortest", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart",
+    "-y", outputPath,
+  ]);
+}
+
+async function findClipOutput(tmpDir: string, type?: string): Promise<string | null> {
+  if (type === "mp3") return findFile(tmpDir, "clip.mp3").catch(() => null).then(f => f ?? findFile(tmpDir, "clip").catch(() => null));
+  return findFile(tmpDir, "clip");
+}
+
+function streamClip(
+  res: import("express").Response,
+  req: import("express").Request,
+  outputPath: string,
+  tmpDir: string,
+  start_time: string,
+  end_time: string,
+  type?: string,
+): void {
+  const ext = path.extname(outputPath).slice(1) || "mp4";
+  const contentType =
+    ext === "mp3" ? "audio/mpeg" :
+    ext === "m4a" ? "audio/mp4" :
+    "video/mp4";
+  const filename = `clip_${start_time.replace(/:/g, "-")}_${end_time.replace(/:/g, "-")}.${ext}`;
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.sendFile(outputPath, (sendErr) => {
+    if (sendErr && !res.headersSent) {
+      req.log.error({ err: sendErr }, "Error streaming clip");
+      res.status(500).end();
     }
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
-  }
-});
+  });
+}
 
 export default router;

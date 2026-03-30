@@ -8,8 +8,7 @@ let cookiesReady = false;
 
 /**
  * Optional: if YOUTUBE_COOKIES env var is set (raw Netscape cookies.txt content),
- * it will be used for authentication. This is a fallback for environments where
- * --impersonate alone isn't sufficient.
+ * it will be used for authentication as an extra layer on top of the Invidious fallback.
  */
 function initCookies(): void {
   if (cookiesReady) return;
@@ -26,12 +25,7 @@ function initCookies(): void {
 
 function buildBaseArgs(): string[] {
   initCookies();
-  const args: string[] = [
-    "--no-check-certificates",
-    // Impersonate Chrome's TLS fingerprint — bypasses YouTube bot detection
-    // without requiring cookies. Needs curl_cffi installed (see Dockerfile).
-    "--impersonate", "chrome",
-  ];
+  const args: string[] = ["--no-check-certificates"];
   if (cookiesReady) {
     args.push("--cookies", COOKIES_FILE);
   }
