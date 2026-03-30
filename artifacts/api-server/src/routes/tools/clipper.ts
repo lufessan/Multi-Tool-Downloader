@@ -157,22 +157,30 @@ router.post("/clip", async (req, res) => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "clip-"));
 
   try {
-    const downloadedFile = path.join(tmpDir, "source.%(ext)s");
     const sectionSpec = `*${start_time}-${end_time}`;
+    // Use a fixed output path so we can find the file reliably after download
+    const outputTemplate = path.join(tmpDir, "source.%(ext)s");
 
     const dlArgs: string[] = [
       "--no-playlist",
       "--no-warnings",
       "--download-sections", sectionSpec,
-      "-o", downloadedFile,
+      "-o", outputTemplate,
     ];
 
     if (type === "audio" || type === "mp3") {
-      dlArgs.push("-f", "bestaudio");
-    } else if (format_id) {
-      dlArgs.push("-f", `${format_id}+bestaudio[ext=m4a]/${format_id}/best`);
+      dlArgs.push("-f", "bestaudio[ext=m4a]/bestaudio");
     } else {
-      dlArgs.push("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best");
+      if (format_id) {
+        // Try the chosen format with m4a audio, fall back to best audio, then best overall
+        dlArgs.push("-f", `${format_id}+bestaudio[ext=m4a]/${format_id}+bestaudio/${format_id}/best`);
+      } else {
+        dlArgs.push("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best");
+      }
+      // Force merge output as mp4 so video + audio always end up in one file
+      dlArgs.push("--merge-output-format", "mp4");
+      // Also remux to mp4 if needed
+      dlArgs.push("--remux-video", "mp4");
     }
 
     dlArgs.push(url);
@@ -181,7 +189,14 @@ router.post("/clip", async (req, res) => {
     const downloadedFiles = await fs.readdir(tmpDir);
     if (downloadedFiles.length === 0) throw new Error("فشل تنزيل الفيديو");
 
-    const sourcePath = path.join(tmpDir, downloadedFiles[0]);
+    // For video: prefer .mp4 file (merged result). For audio: pick first file.
+    let sourceFileName = downloadedFiles[0];
+    if (type !== "audio" && type !== "mp3") {
+      const mp4File = downloadedFiles.find((f) => f.endsWith(".mp4"));
+      if (mp4File) sourceFileName = mp4File;
+    }
+    const sourcePath = path.join(tmpDir, sourceFileName);
+
     let outputPath: string;
     let contentType: string;
 
@@ -204,10 +219,13 @@ router.post("/clip", async (req, res) => {
     } else {
       outputPath = path.join(tmpDir, "clip.mp4");
       contentType = "video/mp4";
+      // Re-mux to ensure both video AND audio streams are included
       await runFfmpeg([
         "-i", sourcePath,
-        "-c", "copy",
+        "-c:v", "copy",
+        "-c:a", "aac",
         "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart",
         "-y", outputPath,
       ]);
     }

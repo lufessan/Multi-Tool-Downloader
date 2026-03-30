@@ -2,7 +2,10 @@ import { Router, type IRouter } from "express";
 import multer from "multer";
 import path from "path";
 import crypto from "crypto";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { spawn } from "child_process";
+import fs from "fs/promises";
+import os from "os";
+import { ai } from "@workspace/integrations-gemini-ai";
 
 const router: IRouter = Router();
 
@@ -10,6 +13,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
+
+const MAX_INLINE_BYTES = 6.5 * 1024 * 1024;
 
 interface SourceLink {
   name: string;
@@ -59,6 +64,19 @@ interface ItunesResponse {
 interface PodcastTitleJson {
   podcast_title?: string;
   host?: string;
+}
+
+function runFfmpeg(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", args);
+    let stderr = "";
+    proc.stderr.on("data", (d: Buffer) => (stderr += d));
+    proc.on("close", (code: number | null) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr || `ffmpeg exited with code ${code}`));
+    });
+    proc.on("error", reject);
+  });
 }
 
 function buildPodcastSourceLinks(title: string, feedUrl?: string): SourceLink[] {
@@ -140,6 +158,100 @@ async function searchPodcasts(query: string): Promise<PodcastResult[]> {
   }
 }
 
+// Extract podcast name from cover image using Gemini vision
+async function extractPodcastFromImage(imageBuffer: Buffer, mimeType: string): Promise<string> {
+  const base64 = imageBuffer.toString("base64");
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [
+      {
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          {
+            text: `This is a podcast cover image. Extract the podcast name and host. Respond ONLY in valid JSON:
+{"podcast_title": "name here", "host": "host name or null"}`,
+          },
+        ],
+      },
+    ],
+    config: { maxOutputTokens: 8192 },
+  });
+
+  const content = response.text ?? "";
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as PodcastTitleJson;
+      return parsed.podcast_title || "";
+    }
+  } catch { /* ignore */ }
+  return content.substring(0, 100);
+}
+
+// Transcribe audio clip and extract podcast name using Gemini
+async function extractPodcastFromAudio(audioBuffer: Buffer, audioExt: string): Promise<{ transcription: string; searchQuery: string }> {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "podcast-"));
+
+  try {
+    const inputPath = path.join(tmpDir, `input${audioExt || ".mp3"}`);
+    await fs.writeFile(inputPath, audioBuffer);
+
+    // Convert to compact MP3
+    const compactPath = path.join(tmpDir, "compact.mp3");
+    await runFfmpeg([
+      "-i", inputPath,
+      "-vn", "-ar", "16000", "-ac", "1", "-b:a", "32k",
+      "-f", "mp3", "-y", compactPath,
+    ]);
+
+    let audioToTranscribe = await fs.readFile(compactPath);
+
+    // Trim to max inline size if needed
+    if (audioToTranscribe.length > MAX_INLINE_BYTES) {
+      audioToTranscribe = audioToTranscribe.slice(0, MAX_INLINE_BYTES);
+    }
+
+    const base64 = audioToTranscribe.toString("base64");
+
+    // Ask Gemini to transcribe AND identify the podcast in one call
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          parts: [
+            { inlineData: { mimeType: "audio/mp3", data: base64 } },
+            {
+              text: `Listen to this podcast audio clip. Transcribe it and identify the podcast name or show if mentioned. Respond ONLY in valid JSON:
+{"transcription": "full transcription here", "podcast_title": "podcast name or best guess based on content", "host": "host name or null"}`,
+            },
+          ],
+        },
+      ],
+      config: { maxOutputTokens: 8192 },
+    });
+
+    const content = response.text ?? "";
+    let transcription = "";
+    let searchQuery = "";
+
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as { transcription?: string; podcast_title?: string };
+        transcription = parsed.transcription || "";
+        searchQuery = parsed.podcast_title || transcription.substring(0, 100);
+      }
+    } catch {
+      transcription = content;
+      searchQuery = content.substring(0, 100);
+    }
+
+    return { transcription, searchQuery };
+  } finally {
+    fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 const uploadFields = upload.fields([
   { name: "image", maxCount: 1 },
   { name: "audio", maxCount: 1 },
@@ -162,76 +274,13 @@ router.post("/recognize", uploadFields, async (req, res) => {
 
     if (imageFile) {
       method = "image";
-      const base64 = imageFile.buffer.toString("base64");
-      const mimeType = imageFile.mimetype;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        max_tokens: 512,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: `data:${mimeType};base64,${base64}` },
-              },
-              {
-                type: "text",
-                text: `This is a podcast cover image. Extract the podcast name and host from this image. Respond in JSON format only: {"podcast_title": "title here", "host": "host name or null"}. If you cannot identify the podcast, still respond with whatever text you can see.`,
-              },
-            ],
-          },
-        ],
-      });
-
-      const content = completion.choices[0]?.message?.content || "";
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]) as PodcastTitleJson;
-          searchQuery = parsed.podcast_title || "";
-        }
-      } catch {
-        searchQuery = content.substring(0, 100);
-      }
+      searchQuery = await extractPodcastFromImage(imageFile.buffer, imageFile.mimetype);
     } else if (audioFile) {
       method = "audio";
       const ext = path.extname(audioFile.originalname || ".mp3").toLowerCase();
-      const audioBuffer = new Uint8Array(audioFile.buffer);
-      const audioFileObj = new File([audioBuffer], `audio${ext || ".mp3"}`, {
-        type: audioFile.mimetype || "audio/mpeg",
-      });
-
-      const result = await openai.audio.transcriptions.create({
-        file: audioFileObj,
-        model: "gpt-4o-mini-transcribe",
-        response_format: "json",
-      });
-
-      transcription = result.text;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        max_tokens: 256,
-        messages: [
-          {
-            role: "user",
-            content: `From this podcast audio transcript, extract the podcast name if mentioned. Respond in JSON: {"podcast_title": "title or best guess based on content", "host": "host name or null"}\n\nTranscript: "${transcription?.substring(0, 500)}"`,
-          },
-        ],
-      });
-
-      const content = completion.choices[0]?.message?.content || "";
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]) as PodcastTitleJson;
-          searchQuery = parsed.podcast_title || transcription?.substring(0, 100) || "";
-        }
-      } catch {
-        searchQuery = transcription?.substring(0, 100) || "";
-      }
+      const result = await extractPodcastFromAudio(audioFile.buffer, ext);
+      transcription = result.transcription;
+      searchQuery = result.searchQuery;
     }
 
     const results: PodcastResult[] = searchQuery ? await searchPodcasts(searchQuery) : [];

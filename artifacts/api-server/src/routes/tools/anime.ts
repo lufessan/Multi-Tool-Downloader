@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { ai } from "@workspace/integrations-gemini-ai";
 
 const router: IRouter = Router();
 
@@ -84,7 +84,7 @@ interface TraceMoeResponse {
   result?: TraceMoeResult[];
 }
 
-interface OpenAIAnimeJson {
+interface GeminiAnimeJson {
   anime_title?: string;
   character?: string | null;
 }
@@ -180,6 +180,42 @@ async function searchAniListByText(query: string): Promise<AnimeResult[]> {
   });
 }
 
+async function recognizeAnimeWithGemini(
+  imageBuffer: Buffer,
+  mimeType: string
+): Promise<{ anime_title: string; character: string | null }> {
+  const base64 = imageBuffer.toString("base64");
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [
+      {
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          {
+            text: `What anime is shown in this image? Respond ONLY in valid JSON with no extra text:
+{"anime_title": "title in English or romaji", "character": "character name or null"}`,
+          },
+        ],
+      },
+    ],
+    config: { maxOutputTokens: 8192 },
+  });
+
+  const content = response.text ?? "";
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as GeminiAnimeJson;
+      return {
+        anime_title: parsed.anime_title || "غير محدد",
+        character: parsed.character || null,
+      };
+    }
+  } catch { /* ignore */ }
+
+  return { anime_title: "غير محدد", character: null };
+}
+
 router.post(
   "/recognize",
   upload.single("image"),
@@ -208,49 +244,19 @@ router.post(
         }
 
         const traceMoeData = await traceMoeRes.json() as TraceMoeResponse;
-        const allTraceResults = (traceMoeData.result || []);
+        const allTraceResults = traceMoeData.result || [];
         const topTraceResult = allTraceResults[0];
         const topSimilarity = topTraceResult?.similarity ?? 0;
 
         if (allTraceResults.length === 0 || topSimilarity < 0.5) {
-          const base64 = imageFile.buffer.toString("base64");
-          const mimeType = imageFile.mimetype;
+          // Fall back to Gemini vision
+          const { anime_title, character } = await recognizeAnimeWithGemini(
+            imageFile.buffer,
+            imageFile.mimetype
+          );
 
-          const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            max_tokens: 1024,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  {
-                    type: "image_url",
-                    image_url: { url: `data:${mimeType};base64,${base64}` },
-                  },
-                  {
-                    type: "text",
-                    text: `What anime is this from? Please respond in JSON format:
-                    {"anime_title": "title in English/romaji", "character": "character name or null", "episode_context": "any details about the scene"}`,
-                  },
-                ],
-              },
-            ],
-          });
-
-          const content = completion.choices[0]?.message?.content || "";
-          let parsedTitle = "غير محدد";
-          let parsedCharacter: string | null = null;
-          try {
-            const jsonMatch = content.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              const parsed = JSON.parse(jsonMatch[0]) as OpenAIAnimeJson;
-              parsedTitle = parsed.anime_title || "غير محدد";
-              parsedCharacter = parsed.character || null;
-            }
-          } catch { /* ignore parse errors */ }
-
-          const anilistResults = await searchAniListByText(parsedTitle);
-          const withCharacter = anilistResults.map((r) => ({ ...r, character: parsedCharacter }));
+          const anilistResults = await searchAniListByText(anime_title);
+          const withCharacter = anilistResults.map((r) => ({ ...r, character }));
           res.json({ results: withCharacter, method: "image" });
           return;
         }

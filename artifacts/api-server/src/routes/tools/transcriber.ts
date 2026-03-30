@@ -4,7 +4,7 @@ import { spawn } from "child_process";
 import path from "path";
 import fs from "fs/promises";
 import os from "os";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { ai } from "@workspace/integrations-gemini-ai";
 
 const router: IRouter = Router();
 
@@ -15,16 +15,12 @@ const upload = multer({
 
 const VIDEO_EXTS = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v"]);
 
-function extractAudioFromVideo(inputPath: string, outputPath: string): Promise<void> {
+// Max inline audio size for Gemini (leave buffer below 8MB)
+const MAX_INLINE_BYTES = 6.5 * 1024 * 1024;
+
+function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("ffmpeg", [
-      "-i", inputPath,
-      "-vn",
-      "-ar", "16000",
-      "-ac", "1",
-      "-f", "mp3",
-      "-y", outputPath,
-    ]);
+    const proc = spawn("ffmpeg", args);
     let stderr = "";
     proc.stderr.on("data", (d: Buffer) => (stderr += d));
     proc.on("close", (code: number | null) => {
@@ -33,6 +29,57 @@ function extractAudioFromVideo(inputPath: string, outputPath: string): Promise<v
     });
     proc.on("error", reject);
   });
+}
+
+// Convert any audio/video to compact 16kHz mono MP3 for Gemini
+function toCompactMp3(inputPath: string, outputPath: string): Promise<void> {
+  return runFfmpeg([
+    "-i", inputPath,
+    "-vn",
+    "-ar", "16000",
+    "-ac", "1",
+    "-b:a", "32k",
+    "-f", "mp3",
+    "-y", outputPath,
+  ]);
+}
+
+// Split a long MP3 into chunks of ~5 minutes each
+async function splitMp3(inputPath: string, chunkDir: string): Promise<string[]> {
+  await runFfmpeg([
+    "-i", inputPath,
+    "-f", "segment",
+    "-segment_time", "290",
+    "-c", "copy",
+    path.join(chunkDir, "chunk_%03d.mp3"),
+  ]);
+  const files = await fs.readdir(chunkDir);
+  return files
+    .filter((f) => f.startsWith("chunk_") && f.endsWith(".mp3"))
+    .sort()
+    .map((f) => path.join(chunkDir, f));
+}
+
+async function transcribeBuffer(audioBuffer: Buffer, mimeType: string, language?: string): Promise<string> {
+  const base64 = audioBuffer.toString("base64");
+  const langInstruction = language
+    ? `Transcribe this audio in the ${language} language. Output only the transcription, no explanations or notes.`
+    : "Transcribe this audio accurately. Output only the transcription text, no explanations or notes.";
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [
+      {
+        parts: [
+          { inlineData: { mimeType, data: base64 } },
+          { text: langInstruction },
+        ],
+      },
+    ],
+    config: { maxOutputTokens: 8192 },
+  });
+
+  return response.text ?? "";
 }
 
 async function transcribeFile(
@@ -45,32 +92,34 @@ async function transcribeFile(
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "transcribe-"));
 
   try {
-    let audioPath: string;
+    // Save original file
+    const inputPath = path.join(tmpDir, `input${ext || ".mp3"}`);
+    await fs.writeFile(inputPath, fileBuffer);
 
-    if (isVideo) {
-      const videoPath = path.join(tmpDir, `input${ext}`);
-      await fs.writeFile(videoPath, fileBuffer);
-      audioPath = path.join(tmpDir, "audio.mp3");
-      await extractAudioFromVideo(videoPath, audioPath);
-    } else {
-      audioPath = path.join(tmpDir, `audio${ext || ".mp3"}`);
-      await fs.writeFile(audioPath, fileBuffer);
+    // Convert to compact mono MP3
+    const compactPath = path.join(tmpDir, "compact.mp3");
+    await toCompactMp3(inputPath, compactPath);
+
+    const compactBuf = await fs.readFile(compactPath);
+
+    // If small enough, transcribe in one shot
+    if (compactBuf.length <= MAX_INLINE_BYTES) {
+      return await transcribeBuffer(compactBuf, "audio/mp3", language);
     }
 
-    const rawBuffer = await fs.readFile(audioPath);
-    const audioBuffer = new Uint8Array(rawBuffer);
-    const audioFile = new File([audioBuffer], `audio${path.extname(audioPath) || ".mp3"}`, {
-      type: "audio/mpeg",
-    });
+    // File is large — split into chunks and transcribe each
+    const chunkDir = path.join(tmpDir, "chunks");
+    await fs.mkdir(chunkDir);
+    const chunks = await splitMp3(compactPath, chunkDir);
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: "gpt-4o-mini-transcribe",
-      response_format: "json",
-      ...(language ? { language } : {}),
-    });
+    const parts: string[] = [];
+    for (const chunkPath of chunks) {
+      const chunkBuf = await fs.readFile(chunkPath);
+      const text = await transcribeBuffer(chunkBuf, "audio/mp3", language);
+      if (text.trim()) parts.push(text.trim());
+    }
 
-    return transcription.text;
+    return parts.join(" ");
   } finally {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
