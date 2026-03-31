@@ -26,6 +26,7 @@ function buildBaseArgs(): string[] {
   const args: string[] = [
     "--no-check-certificates",
     "--geo-bypass",
+    "--geo-bypass-country", "AE",
   ];
 
   // Proxy support — highest priority bypass method.
