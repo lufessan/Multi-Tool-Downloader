@@ -5,7 +5,7 @@ export const groq = new Groq({
 });
 
 export const TRANSCRIPTION_MODEL = "whisper-large-v3-turbo";
-export const VISION_MODEL = "llama-3.2-90b-vision-preview";
+export const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 export const TEXT_MODEL = "llama-3.1-8b-instant";
 
 export function isGroqAvailable(): boolean {
