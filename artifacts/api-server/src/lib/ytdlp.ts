@@ -23,7 +23,10 @@ function initCookies(): void {
 
 function buildBaseArgs(): string[] {
   initCookies();
-  const args: string[] = ["--no-check-certificates"];
+  const args: string[] = [
+    "--no-check-certificates",
+    "--geo-bypass",
+  ];
 
   // Proxy support — highest priority bypass method.
   // Set YTDLP_PROXY to any proxy URL, e.g.:
@@ -76,7 +79,7 @@ export const BOT_ERROR_MESSAGE =
   "YouTube حجب الطلب. إضافة Cookies في متغير YOUTUBE_COOKIES تحل المشكلة.";
 
 export const GEO_ERROR_MESSAGE =
-  "هذا الفيديو غير متاح في منطقة الخادم الجغرافية. جرّب فيديو آخر.";
+  "هذا الفيديو مقيّد جغرافياً ولا يمكن تنزيله من الخادم الحالي. جرّب فيديو آخر أو تحقق من إعدادات صاحب الفيديو.";
 
 export function runYtDlp(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
