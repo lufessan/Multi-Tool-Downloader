@@ -5,7 +5,7 @@ import fs from "fs/promises";
 import https from "https";
 import os from "os";
 import { validatePublicUrlWithDns } from "../../lib/url-validation";
-import { runYtDlp } from "../../lib/ytdlp";
+import { runYtDlp, isYtDlpBotError, isYtDlpGeoError, BOT_ERROR_MESSAGE, GEO_ERROR_MESSAGE } from "../../lib/ytdlp";
 
 const router: IRouter = Router();
 
@@ -50,24 +50,6 @@ function runFfmpeg(args: string[]): Promise<void> {
   });
 }
 
-function isYtDlpBotError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return (
-    msg.includes("Sign in to confirm") ||
-    msg.includes("bot") ||
-    msg.includes("cookies") ||
-    msg.includes("Login required") ||
-    msg.includes("HTTP Error 429") ||
-    msg.includes("HTTP Error 403") ||
-    msg.includes("unusual") ||
-    msg.includes("This request") ||
-    msg.includes("not a robot") ||
-    msg.includes("Precondition")
-  );
-}
-
-const BOT_ERROR_MESSAGE =
-  "YouTube حجب الطلب من الخادم. الحل: أضف ملف Cookies إلى متغير البيئة YOUTUBE_COOKIES في Render.";
 
 // ── GET VIDEO INFO ─────────────────────────────────────────────────────────────
 router.post("/info", async (req, res) => {
@@ -209,9 +191,11 @@ router.post("/download", async (req, res) => {
     fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     if (!res.headersSent) {
       const isBotErr = isYtDlpBotError(ytErr);
+      const isGeoErr = !isBotErr && isYtDlpGeoError(ytErr);
       res.status(400).json({
-        error: isBotErr ? BOT_ERROR_MESSAGE : "فشل التنزيل. تأكد من صحة الرابط.",
+        error: isBotErr ? BOT_ERROR_MESSAGE : isGeoErr ? GEO_ERROR_MESSAGE : "فشل التنزيل. تأكد من صحة الرابط.",
         cookies_required: isBotErr,
+        geo_blocked: isGeoErr,
       });
     }
   }

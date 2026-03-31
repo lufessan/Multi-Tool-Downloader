@@ -43,6 +43,41 @@ function buildBaseArgs(): string[] {
   return args;
 }
 
+export function isYtDlpBotError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("Sign in to confirm") ||
+    msg.includes("bot") ||
+    msg.includes("cookies") ||
+    msg.includes("Login required") ||
+    msg.includes("HTTP Error 429") ||
+    msg.includes("HTTP Error 403") ||
+    msg.includes("unusual") ||
+    msg.includes("This request") ||
+    msg.includes("not a robot") ||
+    msg.includes("Precondition") ||
+    msg.includes("Proxy Authentication Required")
+  );
+}
+
+export function isYtDlpGeoError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("not available in your country") ||
+    msg.includes("not made this video available in your country") ||
+    msg.includes("geo") ||
+    msg.includes("geographic") ||
+    msg.includes("available in") ||
+    msg.includes("region")
+  );
+}
+
+export const BOT_ERROR_MESSAGE =
+  "YouTube حجب الطلب. إضافة Cookies في متغير YOUTUBE_COOKIES تحل المشكلة.";
+
+export const GEO_ERROR_MESSAGE =
+  "هذا الفيديو غير متاح في منطقة الخادم الجغرافية. جرّب فيديو آخر.";
+
 export function runYtDlp(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const baseArgs = buildBaseArgs();
